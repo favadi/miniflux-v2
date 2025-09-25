@@ -1,135 +1,19 @@
 // SPDX-FileCopyrightText: Copyright The Miniflux Authors. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package storage // import "miniflux.app/v2/internal/storage"
+package postgres // import "miniflux.app/v2/internal/storage/postgres"
 
 import (
 	"database/sql"
 	"fmt"
-	"strconv"
-	"strings"
 
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/querybuilder"
 	"miniflux.app/v2/internal/timezone"
 )
 
-// FeedQueryBuilder builds a SQL query to fetch feeds.
-type FeedQueryBuilder struct {
-	store             *Storage
-	args              []any
-	conditions        []string
-	sortExpressions   []string
-	limit             int
-	offset            int
-	withCounters      bool
-	counterJoinFeeds  bool
-	counterArgs       []any
-	counterConditions []string
-}
-
-// NewFeedQueryBuilder returns a new FeedQueryBuilder.
-func NewFeedQueryBuilder(store *Storage, userID int64) *FeedQueryBuilder {
-	return &FeedQueryBuilder{
-		store:             store,
-		args:              []any{userID},
-		conditions:        []string{"f.user_id = $1"},
-		counterArgs:       []any{userID, model.EntryStatusRead, model.EntryStatusUnread},
-		counterConditions: []string{"e.user_id = $1", "e.status IN ($2, $3)"},
-	}
-}
-
-// WithCategoryID filter by category ID.
-func (f *FeedQueryBuilder) WithCategoryID(categoryID int64) *FeedQueryBuilder {
-	if categoryID > 0 {
-		f.conditions = append(f.conditions, "f.category_id = $"+strconv.Itoa(len(f.args)+1))
-		f.args = append(f.args, categoryID)
-		f.counterConditions = append(f.counterConditions, "f.category_id = $"+strconv.Itoa(len(f.counterArgs)+1))
-		f.counterArgs = append(f.counterArgs, categoryID)
-		f.counterJoinFeeds = true
-	}
-	return f
-}
-
-// WithFeedID filter by feed ID.
-func (f *FeedQueryBuilder) WithFeedID(feedID int64) *FeedQueryBuilder {
-	if feedID > 0 {
-		f.conditions = append(f.conditions, "f.id = $"+strconv.Itoa(len(f.args)+1))
-		f.args = append(f.args, feedID)
-	}
-	return f
-}
-
-// WithCounters let the builder return feeds with counters of statuses of entries.
-func (f *FeedQueryBuilder) WithCounters() *FeedQueryBuilder {
-	f.withCounters = true
-	return f
-}
-
-// WithSorting add a sort expression.
-func (f *FeedQueryBuilder) WithSorting(column, direction string) *FeedQueryBuilder {
-	f.sortExpressions = append(f.sortExpressions, column+" "+direction)
-	return f
-}
-
-// WithLimit set the limit.
-func (f *FeedQueryBuilder) WithLimit(limit int) *FeedQueryBuilder {
-	f.limit = limit
-	return f
-}
-
-// WithOffset set the offset.
-func (f *FeedQueryBuilder) WithOffset(offset int) *FeedQueryBuilder {
-	f.offset = offset
-	return f
-}
-
-func (f *FeedQueryBuilder) buildCondition() string {
-	return strings.Join(f.conditions, " AND ")
-}
-
-func (f *FeedQueryBuilder) buildCounterCondition() string {
-	return strings.Join(f.counterConditions, " AND ")
-}
-
-func (f *FeedQueryBuilder) buildSorting() string {
-	var parts string
-
-	if len(f.sortExpressions) > 0 {
-		parts += " ORDER BY " + strings.Join(f.sortExpressions, ", ")
-	}
-
-	if len(parts) > 0 {
-		parts += ", lower(f.title) ASC"
-	}
-
-	if f.limit > 0 {
-		parts += " LIMIT " + strconv.Itoa(f.limit)
-	}
-
-	if f.offset > 0 {
-		parts += " OFFSET " + strconv.Itoa(f.offset)
-	}
-
-	return parts
-}
-
-// GetFeed returns a single feed that match the condition.
-func (f *FeedQueryBuilder) GetFeed() (*model.Feed, error) {
-	f.limit = 1
-	feeds, err := f.GetFeeds()
-	if err != nil {
-		return nil, err
-	}
-
-	if len(feeds) != 1 {
-		return nil, nil
-	}
-
-	return feeds[0], nil
-}
-
 // GetFeeds returns a list of feeds that match the condition.
-func (f *FeedQueryBuilder) GetFeeds() (model.Feeds, error) {
+func (p *Postgres) GetFeeds(f *querybuilder.FeedQueryBuilder) (model.Feeds, error) {
 	var query = `
 		SELECT
 			f.id,
@@ -191,15 +75,15 @@ func (f *FeedQueryBuilder) GetFeeds() (model.Feeds, error) {
 		%s
 	`
 
-	query = fmt.Sprintf(query, f.buildCondition(), f.buildSorting())
+	query = fmt.Sprintf(query, f.BuildCondition(), f.BuildSorting())
 
-	rows, err := f.store.db.Query(query, f.args...)
+	rows, err := p.db.Query(query, f.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf(`store: unable to fetch feeds: %w`, err)
 	}
 	defer rows.Close()
 
-	readCounters, unreadCounters, err := f.fetchFeedCounter()
+	readCounters, unreadCounters, err := p.fetchFeedCounter(f)
 	if err != nil {
 		return nil, err
 	}
@@ -291,8 +175,23 @@ func (f *FeedQueryBuilder) GetFeeds() (model.Feeds, error) {
 	return feeds, nil
 }
 
-func (f *FeedQueryBuilder) fetchFeedCounter() (unreadCounters map[int64]int, readCounters map[int64]int, err error) {
-	if !f.withCounters {
+// GetFeed returns a single feed that match the condition.
+func (p *Postgres) GetFeed(f *querybuilder.FeedQueryBuilder) (*model.Feed, error) {
+	f.WithLimit(1)
+	feeds, err := p.GetFeeds(f)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(feeds) != 1 {
+		return nil, nil
+	}
+
+	return feeds[0], nil
+}
+
+func (p *Postgres) fetchFeedCounter(f *querybuilder.FeedQueryBuilder) (unreadCounters map[int64]int, readCounters map[int64]int, err error) {
+	if !f.IsWithCounters() {
 		return nil, nil, nil
 	}
 	query := `
@@ -309,12 +208,12 @@ func (f *FeedQueryBuilder) fetchFeedCounter() (unreadCounters map[int64]int, rea
 			e.feed_id, e.status
 	`
 	join := ""
-	if f.counterJoinFeeds {
+	if f.IsCounterJoinFeeds() {
 		join = "LEFT JOIN feeds f ON f.id=e.feed_id"
 	}
-	query = fmt.Sprintf(query, join, f.buildCounterCondition())
+	query = fmt.Sprintf(query, join, f.BuildCounterCondition())
 
-	rows, err := f.store.db.Query(query, f.counterArgs...)
+	rows, err := p.db.Query(query, f.CounterArgs()...)
 	if err != nil {
 		return nil, nil, fmt.Errorf(`store: unable to fetch feed counts: %w`, err)
 	}

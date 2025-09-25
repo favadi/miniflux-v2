@@ -9,7 +9,7 @@ import (
 	"miniflux.app/v2/internal/storage"
 )
 
-func ValidateAPIKeyCreation(store *storage.Storage, userID int64, request *model.APIKeyCreationRequest) *locale.LocalizedError {
+func ValidateAPIKeyCreation(store storage.Storage, userID int64, request *model.APIKeyCreationRequest) *locale.LocalizedError {
 	if request.Description == "" {
 		return locale.NewLocalizedError("error.fields_mandatory")
 	}

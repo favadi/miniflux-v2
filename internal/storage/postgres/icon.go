@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright The Miniflux Authors. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package storage // import "miniflux.app/v2/internal/storage"
+package postgres // import "miniflux.app/v2/internal/storage/postgres"
 
 import (
 	"database/sql"
@@ -13,15 +13,15 @@ import (
 )
 
 // HasFeedIcon checks if the given feed has an icon.
-func (s *Storage) HasFeedIcon(feedID int64) bool {
+func (p *Postgres) HasFeedIcon(feedID int64) bool {
 	var result bool
 	query := `SELECT true FROM feed_icons WHERE feed_id=$1 LIMIT 1`
-	s.db.QueryRow(query, feedID).Scan(&result)
+	p.db.QueryRow(query, feedID).Scan(&result)
 	return result
 }
 
 // IconByID returns an icon by the ID.
-func (s *Storage) IconByID(iconID int64) (*model.Icon, error) {
+func (p *Postgres) IconByID(iconID int64) (*model.Icon, error) {
 	var icon model.Icon
 	query := `
 		SELECT
@@ -32,7 +32,7 @@ func (s *Storage) IconByID(iconID int64) (*model.Icon, error) {
 			external_id
 		FROM icons
 		WHERE id=$1`
-	err := s.db.QueryRow(query, iconID).Scan(&icon.ID, &icon.Hash, &icon.MimeType, &icon.Content, &icon.ExternalID)
+	err := p.db.QueryRow(query, iconID).Scan(&icon.ID, &icon.Hash, &icon.MimeType, &icon.Content, &icon.ExternalID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	} else if err != nil {
@@ -43,7 +43,7 @@ func (s *Storage) IconByID(iconID int64) (*model.Icon, error) {
 }
 
 // IconByExternalID returns an icon by the External Icon ID.
-func (s *Storage) IconByExternalID(externalIconID string) (*model.Icon, error) {
+func (p *Postgres) IconByExternalID(externalIconID string) (*model.Icon, error) {
 	var icon model.Icon
 	query := `
 		SELECT
@@ -55,7 +55,7 @@ func (s *Storage) IconByExternalID(externalIconID string) (*model.Icon, error) {
 		FROM icons
 		WHERE external_id=$1
 	`
-	err := s.db.QueryRow(query, externalIconID).Scan(&icon.ID, &icon.Hash, &icon.MimeType, &icon.Content, &icon.ExternalID)
+	err := p.db.QueryRow(query, externalIconID).Scan(&icon.ID, &icon.Hash, &icon.MimeType, &icon.Content, &icon.ExternalID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	} else if err != nil {
@@ -66,7 +66,7 @@ func (s *Storage) IconByExternalID(externalIconID string) (*model.Icon, error) {
 }
 
 // IconByFeedID returns a feed icon.
-func (s *Storage) IconByFeedID(userID, feedID int64) (*model.Icon, error) {
+func (p *Postgres) IconByFeedID(userID, feedID int64) (*model.Icon, error) {
 	query := `
 		SELECT
 			icons.id,
@@ -82,7 +82,7 @@ func (s *Storage) IconByFeedID(userID, feedID int64) (*model.Icon, error) {
 		LIMIT 1
 	`
 	var icon model.Icon
-	err := s.db.QueryRow(query, userID, feedID).Scan(&icon.ID, &icon.Hash, &icon.MimeType, &icon.Content, &icon.ExternalID)
+	err := p.db.QueryRow(query, userID, feedID).Scan(&icon.ID, &icon.Hash, &icon.MimeType, &icon.Content, &icon.ExternalID)
 	if err != nil {
 		return nil, fmt.Errorf(`store: unable to fetch icon: %v`, err)
 	}
@@ -91,8 +91,8 @@ func (s *Storage) IconByFeedID(userID, feedID int64) (*model.Icon, error) {
 }
 
 // StoreFeedIcon creates or updates a feed icon.
-func (s *Storage) StoreFeedIcon(feedID int64, icon *model.Icon) error {
-	tx, err := s.db.Begin()
+func (p *Postgres) StoreFeedIcon(feedID int64, icon *model.Icon) error {
+	tx, err := p.db.Begin()
 	if err != nil {
 		return fmt.Errorf(`store: unable to start transaction: %v`, err)
 	}
@@ -141,7 +141,7 @@ func (s *Storage) StoreFeedIcon(feedID int64, icon *model.Icon) error {
 }
 
 // Icons returns all icons that belongs to a user.
-func (s *Storage) Icons(userID int64) (model.Icons, error) {
+func (p *Postgres) Icons(userID int64) (model.Icons, error) {
 	query := `
 		SELECT
 			icons.id,
@@ -155,7 +155,7 @@ func (s *Storage) Icons(userID int64) (model.Icons, error) {
 		WHERE
 			feeds.user_id=$1
 	`
-	rows, err := s.db.Query(query, userID)
+	rows, err := p.db.Query(query, userID)
 	if err != nil {
 		return nil, fmt.Errorf(`store: unable to fetch icons: %v`, err)
 	}

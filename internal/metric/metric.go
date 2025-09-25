@@ -137,12 +137,12 @@ var (
 
 // collector represents a metric collector.
 type collector struct {
-	store           *storage.Storage
+	store           storage.Storage
 	refreshInterval time.Duration
 }
 
 // NewCollector initializes a new metric collector.
-func NewCollector(store *storage.Storage, refreshInterval time.Duration) *collector {
+func NewCollector(store storage.Storage, refreshInterval time.Duration) *collector {
 	prometheus.MustRegister(BackgroundFeedRefreshDuration)
 	prometheus.MustRegister(ScraperRequestDuration)
 	prometheus.MustRegister(ArchiveEntriesDuration)

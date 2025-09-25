@@ -13,6 +13,7 @@ import (
 	"miniflux.app/v2/internal/http/request"
 	"miniflux.app/v2/internal/http/response/json"
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/querybuilder"
 	feedHandler "miniflux.app/v2/internal/reader/handler"
 	"miniflux.app/v2/internal/validator"
 )
@@ -71,14 +72,14 @@ func (h *handler) refreshFeed(w http.ResponseWriter, r *http.Request) {
 func (h *handler) refreshAllFeeds(w http.ResponseWriter, r *http.Request) {
 	userID := request.UserID(r)
 
-	batchBuilder := h.store.NewBatchBuilder()
+	batchBuilder := querybuilder.NewBatchBuilder()
 	batchBuilder.WithErrorLimit(config.Opts.PollingParsingErrorLimit())
 	batchBuilder.WithoutDisabledFeeds()
 	batchBuilder.WithNextCheckExpired()
 	batchBuilder.WithUserID(userID)
 	batchBuilder.WithLimitPerHost(config.Opts.PollingLimitPerHost())
 
-	jobs, err := batchBuilder.FetchJobs()
+	jobs, err := h.store.FetchJobs(batchBuilder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return

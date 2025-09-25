@@ -13,7 +13,7 @@ import (
 
 type handler struct {
 	router *mux.Router
-	store  *storage.Storage
+	store  storage.Storage
 	tpl    *template.Engine
 	pool   *worker.Pool
 }

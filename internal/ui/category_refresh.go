@@ -13,6 +13,7 @@ import (
 	"miniflux.app/v2/internal/http/response/html"
 	"miniflux.app/v2/internal/http/route"
 	"miniflux.app/v2/internal/locale"
+	"miniflux.app/v2/internal/querybuilder"
 	"miniflux.app/v2/internal/ui/session"
 )
 
@@ -39,13 +40,13 @@ func (h *handler) refreshCategory(w http.ResponseWriter, r *http.Request) int64 
 		userID := request.UserID(r)
 		// We allow the end-user to force refresh all its feeds in this category
 		// without taking into consideration the number of errors.
-		batchBuilder := h.store.NewBatchBuilder()
+		batchBuilder := querybuilder.NewBatchBuilder()
 		batchBuilder.WithoutDisabledFeeds()
 		batchBuilder.WithUserID(userID)
 		batchBuilder.WithCategoryID(categoryID)
 		batchBuilder.WithLimitPerHost(config.Opts.PollingLimitPerHost())
 
-		jobs, err := batchBuilder.FetchJobs()
+		jobs, err := h.store.FetchJobs(batchBuilder)
 		if err != nil {
 			html.ServerError(w, r, err)
 			return 0

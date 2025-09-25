@@ -13,7 +13,7 @@ import (
 	"miniflux.app/v2/internal/storage"
 )
 
-func runCleanupTasks(store *storage.Storage) {
+func runCleanupTasks(store storage.Storage) {
 	nbSessions := store.CleanOldSessions(config.Opts.CleanupRemoveSessionsInterval())
 	nbUserSessions := store.CleanOldUserSessions(config.Opts.CleanupRemoveSessionsInterval())
 	slog.Info("Sessions cleanup completed",

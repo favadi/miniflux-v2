@@ -29,7 +29,7 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 )
 
-func StartWebServer(store *storage.Storage, pool *worker.Pool) []*http.Server {
+func StartWebServer(store storage.Storage, cc autocert.Cache, pool *worker.Pool) []*http.Server {
 	listenAddresses := config.Opts.ListenAddr()
 	var httpServers []*http.Server
 
@@ -41,7 +41,7 @@ func StartWebServer(store *storage.Storage, pool *worker.Pool) []*http.Server {
 	if certDomain != "" {
 		slog.Debug("Configuring autocert manager and shared TLS config", slog.String("domain", certDomain))
 		certManager := autocert.Manager{
-			Cache:      storage.NewCertificateCache(store),
+			Cache:      cc,
 			Prompt:     autocert.AcceptTOS,
 			HostPolicy: autocert.HostWhitelist(certDomain),
 		}
@@ -202,7 +202,7 @@ func startHTTPServer(server *http.Server) {
 	}()
 }
 
-func setupHandler(store *storage.Storage, pool *worker.Pool) *mux.Router {
+func setupHandler(store storage.Storage, pool *worker.Pool) *mux.Router {
 	livenessProbe := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))

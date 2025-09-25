@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright The Miniflux Authors. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package storage // import "miniflux.app/v2/internal/storage"
+package postgres // import "miniflux.app/v2/internal/storage/postgres"
 
 import (
 	"database/sql"
@@ -13,6 +13,7 @@ import (
 
 	"miniflux.app/v2/internal/config"
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/querybuilder"
 )
 
 type byStateAndName struct{ f model.Feeds }
@@ -34,18 +35,18 @@ func (l byStateAndName) Less(i, j int) bool {
 }
 
 // FeedExists checks if the given feed exists.
-func (s *Storage) FeedExists(userID, feedID int64) bool {
+func (p *Postgres) FeedExists(userID, feedID int64) bool {
 	var result bool
 	query := `SELECT true FROM feeds WHERE user_id=$1 AND id=$2 LIMIT 1`
-	s.db.QueryRow(query, userID, feedID).Scan(&result)
+	p.db.QueryRow(query, userID, feedID).Scan(&result)
 	return result
 }
 
 // CheckedAt returns when the feed was last checked.
-func (s *Storage) CheckedAt(userID, feedID int64) (time.Time, error) {
+func (p *Postgres) CheckedAt(userID, feedID int64) (time.Time, error) {
 	var result time.Time
 	query := `SELECT checked_at FROM feeds WHERE user_id=$1 AND id=$2 LIMIT 1`
-	err := s.db.QueryRow(query, userID, feedID).Scan(&result)
+	err := p.db.QueryRow(query, userID, feedID).Scan(&result)
 	if err != nil {
 		return time.Now(), err
 	}
@@ -53,32 +54,32 @@ func (s *Storage) CheckedAt(userID, feedID int64) (time.Time, error) {
 }
 
 // CategoryFeedExists returns true if the given feed exists that belongs to the given category.
-func (s *Storage) CategoryFeedExists(userID, categoryID, feedID int64) bool {
+func (p *Postgres) CategoryFeedExists(userID, categoryID, feedID int64) bool {
 	var result bool
 	query := `SELECT true FROM feeds WHERE user_id=$1 AND category_id=$2 AND id=$3 LIMIT 1`
-	s.db.QueryRow(query, userID, categoryID, feedID).Scan(&result)
+	p.db.QueryRow(query, userID, categoryID, feedID).Scan(&result)
 	return result
 }
 
 // FeedURLExists checks if feed URL already exists.
-func (s *Storage) FeedURLExists(userID int64, feedURL string) bool {
+func (p *Postgres) FeedURLExists(userID int64, feedURL string) bool {
 	var result bool
 	query := `SELECT true FROM feeds WHERE user_id=$1 AND feed_url=$2 LIMIT 1`
-	s.db.QueryRow(query, userID, feedURL).Scan(&result)
+	p.db.QueryRow(query, userID, feedURL).Scan(&result)
 	return result
 }
 
 // AnotherFeedURLExists checks if the user a duplicated feed.
-func (s *Storage) AnotherFeedURLExists(userID, feedID int64, feedURL string) bool {
+func (p *Postgres) AnotherFeedURLExists(userID, feedID int64, feedURL string) bool {
 	var result bool
 	query := `SELECT true FROM feeds WHERE id <> $1 AND user_id=$2 AND feed_url=$3 LIMIT 1`
-	s.db.QueryRow(query, feedID, userID, feedURL).Scan(&result)
+	p.db.QueryRow(query, feedID, userID, feedURL).Scan(&result)
 	return result
 }
 
 // CountAllFeeds returns the number of feeds in the database.
-func (s *Storage) CountAllFeeds() map[string]int64 {
-	rows, err := s.db.Query(`SELECT disabled, count(*) FROM feeds GROUP BY disabled`)
+func (p *Postgres) CountAllFeeds() map[string]int64 {
+	rows, err := p.db.Query(`SELECT disabled, count(*) FROM feeds GROUP BY disabled`)
 	if err != nil {
 		return nil
 	}
@@ -110,14 +111,14 @@ func (s *Storage) CountAllFeeds() map[string]int64 {
 }
 
 // CountUserFeedsWithErrors returns the number of feeds with parsing errors that belong to the given user.
-func (s *Storage) CountUserFeedsWithErrors(userID int64) int {
+func (p *Postgres) CountUserFeedsWithErrors(userID int64) int {
 	pollingParsingErrorLimit := config.Opts.PollingParsingErrorLimit()
 	if pollingParsingErrorLimit <= 0 {
 		pollingParsingErrorLimit = 1
 	}
 	query := `SELECT count(*) FROM feeds WHERE user_id=$1 AND parsing_error_count >= $2`
 	var result int
-	err := s.db.QueryRow(query, userID, pollingParsingErrorLimit).Scan(&result)
+	err := p.db.QueryRow(query, userID, pollingParsingErrorLimit).Scan(&result)
 	if err != nil {
 		return 0
 	}
@@ -126,14 +127,14 @@ func (s *Storage) CountUserFeedsWithErrors(userID int64) int {
 }
 
 // CountAllFeedsWithErrors returns the number of feeds with parsing errors.
-func (s *Storage) CountAllFeedsWithErrors() int {
+func (p *Postgres) CountAllFeedsWithErrors() int {
 	pollingParsingErrorLimit := config.Opts.PollingParsingErrorLimit()
 	if pollingParsingErrorLimit <= 0 {
 		pollingParsingErrorLimit = 1
 	}
 	query := `SELECT count(*) FROM feeds WHERE parsing_error_count >= $1`
 	var result int
-	err := s.db.QueryRow(query, pollingParsingErrorLimit).Scan(&result)
+	err := p.db.QueryRow(query, pollingParsingErrorLimit).Scan(&result)
 	if err != nil {
 		return 0
 	}
@@ -142,14 +143,14 @@ func (s *Storage) CountAllFeedsWithErrors() int {
 }
 
 // Feeds returns all feeds that belongs to the given user.
-func (s *Storage) Feeds(userID int64) (model.Feeds, error) {
-	builder := NewFeedQueryBuilder(s, userID)
+func (p *Postgres) Feeds(userID int64) (model.Feeds, error) {
+	builder := querybuilder.NewFeedQueryBuilder(userID)
 	builder.WithSorting(model.DefaultFeedSorting, model.DefaultFeedSortingDirection)
-	return builder.GetFeeds()
+	return p.GetFeeds(builder)
 }
 
-func getFeedsSorted(builder *FeedQueryBuilder) (model.Feeds, error) {
-	result, err := builder.GetFeeds()
+func (p *Postgres) getFeedsSorted(builder *querybuilder.FeedQueryBuilder) (model.Feeds, error) {
+	result, err := p.GetFeeds(builder)
 	if err == nil {
 		sort.Sort(byStateAndName{result})
 		return result, nil
@@ -158,32 +159,32 @@ func getFeedsSorted(builder *FeedQueryBuilder) (model.Feeds, error) {
 }
 
 // FeedsWithCounters returns all feeds of the given user with counters of read and unread entries.
-func (s *Storage) FeedsWithCounters(userID int64) (model.Feeds, error) {
-	builder := NewFeedQueryBuilder(s, userID)
+func (p *Postgres) FeedsWithCounters(userID int64) (model.Feeds, error) {
+	builder := querybuilder.NewFeedQueryBuilder(userID)
 	builder.WithCounters()
 	builder.WithSorting(model.DefaultFeedSorting, model.DefaultFeedSortingDirection)
-	return getFeedsSorted(builder)
+	return p.getFeedsSorted(builder)
 }
 
 // FetchCounters returns read and unread count.
-func (s *Storage) FetchCounters(userID int64) (model.FeedCounters, error) {
-	builder := NewFeedQueryBuilder(s, userID)
+func (p *Postgres) FetchCounters(userID int64) (model.FeedCounters, error) {
+	builder := querybuilder.NewFeedQueryBuilder(userID)
 	builder.WithCounters()
-	reads, unreads, err := builder.fetchFeedCounter()
+	reads, unreads, err := p.fetchFeedCounter(builder)
 	return model.FeedCounters{ReadCounters: reads, UnreadCounters: unreads}, err
 }
 
 // FeedsByCategoryWithCounters returns all feeds of the given user/category with counters of read and unread entries.
-func (s *Storage) FeedsByCategoryWithCounters(userID, categoryID int64) (model.Feeds, error) {
-	builder := NewFeedQueryBuilder(s, userID)
+func (p *Postgres) FeedsByCategoryWithCounters(userID, categoryID int64) (model.Feeds, error) {
+	builder := querybuilder.NewFeedQueryBuilder(userID)
 	builder.WithCategoryID(categoryID)
 	builder.WithCounters()
 	builder.WithSorting(model.DefaultFeedSorting, model.DefaultFeedSortingDirection)
-	return getFeedsSorted(builder)
+	return p.getFeedsSorted(builder)
 }
 
 // WeeklyFeedEntryCount returns the weekly entry count for a feed.
-func (s *Storage) WeeklyFeedEntryCount(userID, feedID int64) (int, error) {
+func (p *Postgres) WeeklyFeedEntryCount(userID, feedID int64) (int, error) {
 	// Calculate a virtual weekly count based on the average updating frequency.
 	// This helps after just adding a high volume feed.
 	// Return 0 when the 'count(*)' is zero(0) or one(1).
@@ -202,7 +203,7 @@ func (s *Storage) WeeklyFeedEntryCount(userID, feedID int64) (int, error) {
 	`
 
 	var weeklyCount int
-	err := s.db.QueryRow(query, userID, feedID).Scan(&weeklyCount)
+	err := p.db.QueryRow(query, userID, feedID).Scan(&weeklyCount)
 
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -215,10 +216,10 @@ func (s *Storage) WeeklyFeedEntryCount(userID, feedID int64) (int, error) {
 }
 
 // FeedByID returns a feed by the ID.
-func (s *Storage) FeedByID(userID, feedID int64) (*model.Feed, error) {
-	builder := NewFeedQueryBuilder(s, userID)
+func (p *Postgres) FeedByID(userID, feedID int64) (*model.Feed, error) {
+	builder := querybuilder.NewFeedQueryBuilder(userID)
 	builder.WithFeedID(feedID)
-	feed, err := builder.GetFeed()
+	feed, err := p.GetFeed(builder)
 
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -231,7 +232,7 @@ func (s *Storage) FeedByID(userID, feedID int64) (*model.Feed, error) {
 }
 
 // CreateFeed creates a new feed.
-func (s *Storage) CreateFeed(feed *model.Feed) error {
+func (p *Postgres) CreateFeed(feed *model.Feed) error {
 	sql := `
 		INSERT INTO feeds (
 			feed_url,
@@ -270,7 +271,7 @@ func (s *Storage) CreateFeed(feed *model.Feed) error {
 		RETURNING
 			id
 	`
-	err := s.db.QueryRow(
+	err := p.db.QueryRow(
 		sql,
 		feed.FeedURL,
 		feed.SiteURL,
@@ -311,12 +312,12 @@ func (s *Storage) CreateFeed(feed *model.Feed) error {
 		entry.FeedID = feed.ID
 		entry.UserID = feed.UserID
 
-		tx, err := s.db.Begin()
+		tx, err := p.db.Begin()
 		if err != nil {
 			return fmt.Errorf(`store: unable to start transaction: %v`, err)
 		}
 
-		entryExists, err := s.entryExists(tx, entry)
+		entryExists, err := p.entryExists(tx, entry)
 		if err != nil {
 			if rollbackErr := tx.Rollback(); rollbackErr != nil {
 				return fmt.Errorf(`store: unable to rollback transaction: %v (rolled back due to: %v)`, rollbackErr, err)
@@ -325,7 +326,7 @@ func (s *Storage) CreateFeed(feed *model.Feed) error {
 		}
 
 		if !entryExists {
-			if err := s.createEntry(tx, entry); err != nil {
+			if err := p.createEntry(tx, entry); err != nil {
 				if rollbackErr := tx.Rollback(); rollbackErr != nil {
 					return fmt.Errorf(`store: unable to rollback transaction: %v (rolled back due to: %v)`, rollbackErr, err)
 				}
@@ -342,7 +343,7 @@ func (s *Storage) CreateFeed(feed *model.Feed) error {
 }
 
 // UpdateFeed updates an existing feed.
-func (s *Storage) UpdateFeed(feed *model.Feed) (err error) {
+func (p *Postgres) UpdateFeed(feed *model.Feed) (err error) {
 	query := `
 		UPDATE
 			feeds
@@ -388,7 +389,7 @@ func (s *Storage) UpdateFeed(feed *model.Feed) (err error) {
 		WHERE
 			id=$39 AND user_id=$40
 	`
-	_, err = s.db.Exec(query,
+	_, err = p.db.Exec(query,
 		feed.FeedURL,
 		feed.SiteURL,
 		feed.Title,
@@ -439,7 +440,7 @@ func (s *Storage) UpdateFeed(feed *model.Feed) (err error) {
 }
 
 // UpdateFeedError updates feed errors.
-func (s *Storage) UpdateFeedError(feed *model.Feed) (err error) {
+func (p *Postgres) UpdateFeedError(feed *model.Feed) (err error) {
 	query := `
 		UPDATE
 			feeds
@@ -451,7 +452,7 @@ func (s *Storage) UpdateFeedError(feed *model.Feed) (err error) {
 		WHERE
 			id=$5 AND user_id=$6
 	`
-	_, err = s.db.Exec(query,
+	_, err = p.db.Exec(query,
 		feed.ParsingErrorMsg,
 		feed.ParsingErrorCount,
 		feed.CheckedAt,
@@ -469,8 +470,8 @@ func (s *Storage) UpdateFeedError(feed *model.Feed) (err error) {
 
 // RemoveFeed removes a feed and all entries.
 // This operation can takes time if the feed has lot of entries.
-func (s *Storage) RemoveFeed(userID, feedID int64) error {
-	rows, err := s.db.Query(`SELECT id FROM entries WHERE user_id=$1 AND feed_id=$2`, userID, feedID)
+func (p *Postgres) RemoveFeed(userID, feedID int64) error {
+	rows, err := p.db.Query(`SELECT id FROM entries WHERE user_id=$1 AND feed_id=$2`, userID, feedID)
 	if err != nil {
 		return fmt.Errorf(`store: unable to get user feed entries: %v`, err)
 	}
@@ -488,12 +489,12 @@ func (s *Storage) RemoveFeed(userID, feedID int64) error {
 			slog.Int64("entry_id", entryID),
 		)
 
-		if _, err := s.db.Exec(`DELETE FROM entries WHERE id=$1 AND user_id=$2`, entryID, userID); err != nil {
+		if _, err := p.db.Exec(`DELETE FROM entries WHERE id=$1 AND user_id=$2`, entryID, userID); err != nil {
 			return fmt.Errorf(`store: unable to delete user feed entries #%d: %v`, entryID, err)
 		}
 	}
 
-	if _, err := s.db.Exec(`DELETE FROM feeds WHERE id=$1 AND user_id=$2`, feedID, userID); err != nil {
+	if _, err := p.db.Exec(`DELETE FROM feeds WHERE id=$1 AND user_id=$2`, feedID, userID); err != nil {
 		return fmt.Errorf(`store: unable to delete feed #%d: %v`, feedID, err)
 	}
 
@@ -501,12 +502,12 @@ func (s *Storage) RemoveFeed(userID, feedID int64) error {
 }
 
 // ResetFeedErrors removes all feed errors.
-func (s *Storage) ResetFeedErrors() error {
-	_, err := s.db.Exec(`UPDATE feeds SET parsing_error_count=0, parsing_error_msg=''`)
+func (p *Postgres) ResetFeedErrors() error {
+	_, err := p.db.Exec(`UPDATE feeds SET parsing_error_count=0, parsing_error_msg=''`)
 	return err
 }
 
-func (s *Storage) ResetNextCheckAt() error {
-	_, err := s.db.Exec(`UPDATE feeds SET next_check_at=now()`)
+func (p *Postgres) ResetNextCheckAt() error {
+	_, err := p.db.Exec(`UPDATE feeds SET next_check_at=now()`)
 	return err
 }

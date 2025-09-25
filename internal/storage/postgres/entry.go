@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright The Miniflux Authors. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package storage // import "miniflux.app/v2/internal/storage"
+package postgres // import "miniflux.app/v2/internal/storage/postgres"
 
 import (
 	"database/sql"
@@ -12,13 +12,14 @@ import (
 
 	"miniflux.app/v2/internal/crypto"
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/querybuilder"
 
 	"github.com/lib/pq"
 )
 
 // CountAllEntries returns the number of entries for each status in the database.
-func (s *Storage) CountAllEntries() map[string]int64 {
-	rows, err := s.db.Query(`SELECT status, count(*) FROM entries GROUP BY status`)
+func (p *Postgres) CountAllEntries() map[string]int64 {
+	rows, err := p.db.Query(`SELECT status, count(*) FROM entries GROUP BY status`)
 	if err != nil {
 		return nil
 	}
@@ -45,12 +46,12 @@ func (s *Storage) CountAllEntries() map[string]int64 {
 }
 
 // CountUnreadEntries returns the number of unread entries.
-func (s *Storage) CountUnreadEntries(userID int64) int {
-	builder := s.NewEntryQueryBuilder(userID)
+func (p *Postgres) CountUnreadEntries(userID int64) int {
+	builder := querybuilder.NewEntryQueryBuilder(userID)
 	builder.WithStatus(model.EntryStatusUnread)
 	builder.WithGloballyVisible()
 
-	n, err := builder.CountEntries()
+	n, err := p.CountEntries(builder)
 	if err != nil {
 		slog.Error("Unable to count unread entries",
 			slog.Int64("user_id", userID),
@@ -62,13 +63,8 @@ func (s *Storage) CountUnreadEntries(userID int64) int {
 	return n
 }
 
-// NewEntryQueryBuilder returns a new EntryQueryBuilder
-func (s *Storage) NewEntryQueryBuilder(userID int64) *EntryQueryBuilder {
-	return NewEntryQueryBuilder(s, userID)
-}
-
 // UpdateEntryTitleAndContent updates entry title and content.
-func (s *Storage) UpdateEntryTitleAndContent(entry *model.Entry) error {
+func (p *Postgres) UpdateEntryTitleAndContent(entry *model.Entry) error {
 	truncatedTitle, truncatedContent := truncateTitleAndContentForTSVectorField(entry.Title, entry.Content)
 	query := `
 		UPDATE
@@ -82,7 +78,7 @@ func (s *Storage) UpdateEntryTitleAndContent(entry *model.Entry) error {
 			id=$6 AND user_id=$7
 	`
 
-	if _, err := s.db.Exec(
+	if _, err := p.db.Exec(
 		query,
 		entry.Title,
 		entry.Content,
@@ -98,7 +94,7 @@ func (s *Storage) UpdateEntryTitleAndContent(entry *model.Entry) error {
 }
 
 // createEntry add a new entry.
-func (s *Storage) createEntry(tx *sql.Tx, entry *model.Entry) error {
+func (p *Postgres) createEntry(tx *sql.Tx, entry *model.Entry) error {
 	truncatedTitle, truncatedContent := truncateTitleAndContentForTSVectorField(entry.Title, entry.Content)
 	query := `
 		INSERT INTO entries
@@ -164,7 +160,7 @@ func (s *Storage) createEntry(tx *sql.Tx, entry *model.Entry) error {
 	for _, enclosure := range entry.Enclosures {
 		enclosure.EntryID = entry.ID
 		enclosure.UserID = entry.UserID
-		err := s.createEnclosure(tx, enclosure)
+		err := p.createEnclosure(tx, enclosure)
 		if err != nil {
 			return err
 		}
@@ -176,7 +172,7 @@ func (s *Storage) createEntry(tx *sql.Tx, entry *model.Entry) error {
 // updateEntry updates an entry when a feed is refreshed.
 // Note: we do not update the published date because some feeds do not contains any date,
 // it default to time.Now() which could change the order of items on the history page.
-func (s *Storage) updateEntry(tx *sql.Tx, entry *model.Entry) error {
+func (p *Postgres) updateEntry(tx *sql.Tx, entry *model.Entry) error {
 	truncatedTitle, truncatedContent := truncateTitleAndContentForTSVectorField(entry.Title, entry.Content)
 	query := `
 		UPDATE
@@ -219,11 +215,11 @@ func (s *Storage) updateEntry(tx *sql.Tx, entry *model.Entry) error {
 		enclosure.EntryID = entry.ID
 	}
 
-	return s.updateEnclosures(tx, entry)
+	return p.updateEnclosures(tx, entry)
 }
 
 // entryExists checks if an entry already exists based on its hash when refreshing a feed.
-func (s *Storage) entryExists(tx *sql.Tx, entry *model.Entry) (bool, error) {
+func (p *Postgres) entryExists(tx *sql.Tx, entry *model.Entry) (bool, error) {
 	var result bool
 
 	// Note: This query uses entries_feed_id_hash_key index (filtering on user_id is not necessary).
@@ -236,17 +232,17 @@ func (s *Storage) entryExists(tx *sql.Tx, entry *model.Entry) (bool, error) {
 	return result, nil
 }
 
-func (s *Storage) IsNewEntry(feedID int64, entryHash string) bool {
+func (p *Postgres) IsNewEntry(feedID int64, entryHash string) bool {
 	var result bool
-	s.db.QueryRow(`SELECT true FROM entries WHERE feed_id=$1 AND hash=$2 LIMIT 1`, feedID, entryHash).Scan(&result)
+	p.db.QueryRow(`SELECT true FROM entries WHERE feed_id=$1 AND hash=$2 LIMIT 1`, feedID, entryHash).Scan(&result)
 	return !result
 }
 
-func (s *Storage) GetReadTime(feedID int64, entryHash string) int {
+func (p *Postgres) GetReadTime(feedID int64, entryHash string) int {
 	var result int
 
 	// Note: This query uses entries_feed_id_hash_key index
-	s.db.QueryRow(
+	p.db.QueryRow(
 		`SELECT
 			reading_time
 		FROM
@@ -262,7 +258,7 @@ func (s *Storage) GetReadTime(feedID int64, entryHash string) int {
 }
 
 // cleanupRemovedEntriesNotInFeed deletes from the database entries marked as "removed" and not visible anymore in the feed.
-func (s *Storage) cleanupRemovedEntriesNotInFeed(feedID int64, entryHashes []string) error {
+func (p *Postgres) cleanupRemovedEntriesNotInFeed(feedID int64, entryHashes []string) error {
 	query := `
 		DELETE FROM
 			entries
@@ -271,7 +267,7 @@ func (s *Storage) cleanupRemovedEntriesNotInFeed(feedID int64, entryHashes []str
 			status=$2 AND
 			NOT (hash=ANY($3))
 	`
-	if _, err := s.db.Exec(query, feedID, model.EntryStatusRemoved, pq.Array(entryHashes)); err != nil {
+	if _, err := p.db.Exec(query, feedID, model.EntryStatusRemoved, pq.Array(entryHashes)); err != nil {
 		return fmt.Errorf(`store: unable to cleanup entries: %v`, err)
 	}
 
@@ -279,14 +275,14 @@ func (s *Storage) cleanupRemovedEntriesNotInFeed(feedID int64, entryHashes []str
 }
 
 // DeleteRemovedEntriesEnclosures deletes enclosures associated with entries marked as "removed".
-func (s *Storage) DeleteRemovedEntriesEnclosures() (int64, error) {
+func (p *Postgres) DeleteRemovedEntriesEnclosures() (int64, error) {
 	query := `
 		DELETE FROM
 			enclosures
 		WHERE
 		 	enclosures.entry_id IN (SELECT id FROM entries WHERE status=$1)
 	`
-	result, err := s.db.Exec(query, model.EntryStatusRemoved)
+	result, err := p.db.Exec(query, model.EntryStatusRemoved)
 	if err != nil {
 		return 0, fmt.Errorf(`store: unable to delete enclosures from removed entries: %v`, err)
 	}
@@ -300,7 +296,7 @@ func (s *Storage) DeleteRemovedEntriesEnclosures() (int64, error) {
 }
 
 // ClearRemovedEntriesContent clears the content fields of entries marked as "removed", keeping only their metadata.
-func (s *Storage) ClearRemovedEntriesContent(limit int) (int64, error) {
+func (p *Postgres) ClearRemovedEntriesContent(limit int) (int64, error) {
 	query := `
 		UPDATE
 			entries
@@ -320,7 +316,7 @@ func (s *Storage) ClearRemovedEntriesContent(limit int) (int64, error) {
 		)
 	`
 
-	result, err := s.db.Exec(query, model.EntryStatusRemoved, limit)
+	result, err := p.db.Exec(query, model.EntryStatusRemoved, limit)
 	if err != nil {
 		return 0, fmt.Errorf(`store: unable to clear content from removed entries: %v`, err)
 	}
@@ -334,19 +330,19 @@ func (s *Storage) ClearRemovedEntriesContent(limit int) (int64, error) {
 }
 
 // RefreshFeedEntries updates feed entries while refreshing a feed.
-func (s *Storage) RefreshFeedEntries(userID, feedID int64, entries model.Entries, updateExistingEntries bool) (newEntries model.Entries, err error) {
+func (p *Postgres) RefreshFeedEntries(userID, feedID int64, entries model.Entries, updateExistingEntries bool) (newEntries model.Entries, err error) {
 	entryHashes := make([]string, 0, len(entries))
 
 	for _, entry := range entries {
 		entry.UserID = userID
 		entry.FeedID = feedID
 
-		tx, err := s.db.Begin()
+		tx, err := p.db.Begin()
 		if err != nil {
 			return nil, fmt.Errorf(`store: unable to start transaction: %v`, err)
 		}
 
-		entryExists, err := s.entryExists(tx, entry)
+		entryExists, err := p.entryExists(tx, entry)
 		if err != nil {
 			if rollbackErr := tx.Rollback(); rollbackErr != nil {
 				return nil, fmt.Errorf(`store: unable to rollback transaction: %v (rolled back due to: %v)`, rollbackErr, err)
@@ -356,10 +352,10 @@ func (s *Storage) RefreshFeedEntries(userID, feedID int64, entries model.Entries
 
 		if entryExists {
 			if updateExistingEntries {
-				err = s.updateEntry(tx, entry)
+				err = p.updateEntry(tx, entry)
 			}
 		} else {
-			err = s.createEntry(tx, entry)
+			err = p.createEntry(tx, entry)
 			if err == nil {
 				newEntries = append(newEntries, entry)
 			}
@@ -380,7 +376,7 @@ func (s *Storage) RefreshFeedEntries(userID, feedID int64, entries model.Entries
 	}
 
 	go func() {
-		if err := s.cleanupRemovedEntriesNotInFeed(feedID, entryHashes); err != nil {
+		if err := p.cleanupRemovedEntriesNotInFeed(feedID, entryHashes); err != nil {
 			slog.Error("Unable to cleanup removed entries",
 				slog.Int64("user_id", userID),
 				slog.Int64("feed_id", feedID),
@@ -393,7 +389,7 @@ func (s *Storage) RefreshFeedEntries(userID, feedID int64, entries model.Entries
 }
 
 // ArchiveEntries changes the status of entries to "removed" after the interval (24h minimum).
-func (s *Storage) ArchiveEntries(status string, interval time.Duration, limit int) (int64, error) {
+func (p *Postgres) ArchiveEntries(status string, interval time.Duration, limit int) (int64, error) {
 	if interval < 0 || limit <= 0 {
 		return 0, nil
 	}
@@ -421,7 +417,7 @@ func (s *Storage) ArchiveEntries(status string, interval time.Duration, limit in
 
 	days := max(int(interval/(24*time.Hour)), 1)
 
-	result, err := s.db.Exec(query, model.EntryStatusRemoved, status, fmt.Sprintf("%d days", days), limit)
+	result, err := p.db.Exec(query, model.EntryStatusRemoved, status, fmt.Sprintf("%d days", days), limit)
 	if err != nil {
 		return 0, fmt.Errorf(`store: unable to archive %s entries: %v`, status, err)
 	}
@@ -435,7 +431,7 @@ func (s *Storage) ArchiveEntries(status string, interval time.Duration, limit in
 }
 
 // SetEntriesStatus update the status of the given list of entries.
-func (s *Storage) SetEntriesStatus(userID int64, entryIDs []int64, status string) error {
+func (p *Postgres) SetEntriesStatus(userID int64, entryIDs []int64, status string) error {
 	// Entries that have the model.EntryStatusRemoved status are immutable.
 	query := `
 		UPDATE
@@ -448,15 +444,15 @@ func (s *Storage) SetEntriesStatus(userID int64, entryIDs []int64, status string
 			id=ANY($3) AND
 			status!=$4
 		`
-	if _, err := s.db.Exec(query, status, userID, pq.Array(entryIDs), model.EntryStatusRemoved); err != nil {
+	if _, err := p.db.Exec(query, status, userID, pq.Array(entryIDs), model.EntryStatusRemoved); err != nil {
 		return fmt.Errorf(`store: unable to update entries statuses %v: %v`, entryIDs, err)
 	}
 
 	return nil
 }
 
-func (s *Storage) SetEntriesStatusCount(userID int64, entryIDs []int64, status string) (int, error) {
-	if err := s.SetEntriesStatus(userID, entryIDs, status); err != nil {
+func (p *Postgres) SetEntriesStatusCount(userID int64, entryIDs []int64, status string) (int, error) {
+	if err := p.SetEntriesStatus(userID, entryIDs, status); err != nil {
 		return 0, err
 	}
 
@@ -470,7 +466,7 @@ func (s *Storage) SetEntriesStatusCount(userID int64, entryIDs []int64, status s
 			AND NOT f.hide_globally
 			AND NOT c.hide_globally
 	`
-	row := s.db.QueryRow(query, userID, pq.Array(entryIDs))
+	row := p.db.QueryRow(query, userID, pq.Array(entryIDs))
 	visible := 0
 	if err := row.Scan(&visible); err != nil {
 		return 0, fmt.Errorf(`store: unable to query entries visibility %v: %v`, entryIDs, err)
@@ -480,9 +476,9 @@ func (s *Storage) SetEntriesStatusCount(userID int64, entryIDs []int64, status s
 }
 
 // SetEntriesStarredState updates the starred state for the given list of entries.
-func (s *Storage) SetEntriesStarredState(userID int64, entryIDs []int64, starred bool) error {
+func (p *Postgres) SetEntriesStarredState(userID int64, entryIDs []int64, starred bool) error {
 	query := `UPDATE entries SET starred=$1, changed_at=now() WHERE user_id=$2 AND id=ANY($3)`
-	result, err := s.db.Exec(query, starred, userID, pq.Array(entryIDs))
+	result, err := p.db.Exec(query, starred, userID, pq.Array(entryIDs))
 	if err != nil {
 		return fmt.Errorf(`store: unable to update the starred state %v: %v`, entryIDs, err)
 	}
@@ -500,9 +496,9 @@ func (s *Storage) SetEntriesStarredState(userID int64, entryIDs []int64, starred
 }
 
 // ToggleStarred toggles entry starred value.
-func (s *Storage) ToggleStarred(userID int64, entryID int64) error {
+func (p *Postgres) ToggleStarred(userID int64, entryID int64) error {
 	query := `UPDATE entries SET starred = NOT starred, changed_at=now() WHERE user_id=$1 AND id=$2`
-	result, err := s.db.Exec(query, userID, entryID)
+	result, err := p.db.Exec(query, userID, entryID)
 	if err != nil {
 		return fmt.Errorf(`store: unable to toggle starred flag for entry #%d: %v`, entryID, err)
 	}
@@ -520,7 +516,7 @@ func (s *Storage) ToggleStarred(userID int64, entryID int64) error {
 }
 
 // FlushHistory changes all entries with the status "read" to "removed".
-func (s *Storage) FlushHistory(userID int64) error {
+func (p *Postgres) FlushHistory(userID int64) error {
 	query := `
 		UPDATE
 			entries
@@ -530,7 +526,7 @@ func (s *Storage) FlushHistory(userID int64) error {
 		WHERE
 			user_id=$2 AND status=$3 AND starred is false AND share_code=''
 	`
-	_, err := s.db.Exec(query, model.EntryStatusRemoved, userID, model.EntryStatusRead)
+	_, err := p.db.Exec(query, model.EntryStatusRemoved, userID, model.EntryStatusRead)
 	if err != nil {
 		return fmt.Errorf(`store: unable to flush history: %v`, err)
 	}
@@ -539,9 +535,9 @@ func (s *Storage) FlushHistory(userID int64) error {
 }
 
 // MarkAllAsRead updates all user entries to the read status.
-func (s *Storage) MarkAllAsRead(userID int64) error {
+func (p *Postgres) MarkAllAsRead(userID int64) error {
 	query := `UPDATE entries SET status=$1, changed_at=now() WHERE user_id=$2 AND status=$3`
-	result, err := s.db.Exec(query, model.EntryStatusRead, userID, model.EntryStatusUnread)
+	result, err := p.db.Exec(query, model.EntryStatusRead, userID, model.EntryStatusUnread)
 	if err != nil {
 		return fmt.Errorf(`store: unable to mark all entries as read: %v`, err)
 	}
@@ -556,7 +552,7 @@ func (s *Storage) MarkAllAsRead(userID int64) error {
 }
 
 // MarkAllAsReadBeforeDate updates all user entries to the read status before the given date.
-func (s *Storage) MarkAllAsReadBeforeDate(userID int64, before time.Time) error {
+func (p *Postgres) MarkAllAsReadBeforeDate(userID int64, before time.Time) error {
 	query := `
 		UPDATE
 			entries
@@ -566,7 +562,7 @@ func (s *Storage) MarkAllAsReadBeforeDate(userID int64, before time.Time) error 
 		WHERE
 			user_id=$2 AND status=$3 AND published_at < $4
 	`
-	result, err := s.db.Exec(query, model.EntryStatusRead, userID, model.EntryStatusUnread, before)
+	result, err := p.db.Exec(query, model.EntryStatusRead, userID, model.EntryStatusUnread, before)
 	if err != nil {
 		return fmt.Errorf(`store: unable to mark all entries as read before %s: %v`, before.Format(time.RFC3339), err)
 	}
@@ -580,7 +576,7 @@ func (s *Storage) MarkAllAsReadBeforeDate(userID int64, before time.Time) error 
 }
 
 // MarkGloballyVisibleFeedsAsRead updates all user entries to the read status.
-func (s *Storage) MarkGloballyVisibleFeedsAsRead(userID int64) error {
+func (p *Postgres) MarkGloballyVisibleFeedsAsRead(userID int64) error {
 	query := `
 		UPDATE
 			entries
@@ -595,7 +591,7 @@ func (s *Storage) MarkGloballyVisibleFeedsAsRead(userID int64) error {
 			AND entries.status=$3
 			AND feeds.hide_globally=$4
 	`
-	result, err := s.db.Exec(query, model.EntryStatusRead, userID, model.EntryStatusUnread, false)
+	result, err := p.db.Exec(query, model.EntryStatusRead, userID, model.EntryStatusUnread, false)
 	if err != nil {
 		return fmt.Errorf(`store: unable to mark globally visible feeds as read: %v`, err)
 	}
@@ -610,7 +606,7 @@ func (s *Storage) MarkGloballyVisibleFeedsAsRead(userID int64) error {
 }
 
 // MarkFeedAsRead updates all feed entries to the read status.
-func (s *Storage) MarkFeedAsRead(userID, feedID int64, before time.Time) error {
+func (p *Postgres) MarkFeedAsRead(userID, feedID int64, before time.Time) error {
 	query := `
 		UPDATE
 			entries
@@ -620,7 +616,7 @@ func (s *Storage) MarkFeedAsRead(userID, feedID int64, before time.Time) error {
 		WHERE
 			user_id=$2 AND feed_id=$3 AND status=$4 AND published_at < $5
 	`
-	result, err := s.db.Exec(query, model.EntryStatusRead, userID, feedID, model.EntryStatusUnread, before)
+	result, err := p.db.Exec(query, model.EntryStatusRead, userID, feedID, model.EntryStatusUnread, before)
 	if err != nil {
 		return fmt.Errorf(`store: unable to mark feed entries as read: %v`, err)
 	}
@@ -637,7 +633,7 @@ func (s *Storage) MarkFeedAsRead(userID, feedID int64, before time.Time) error {
 }
 
 // MarkCategoryAsRead updates all category entries to the read status.
-func (s *Storage) MarkCategoryAsRead(userID, categoryID int64, before time.Time) error {
+func (p *Postgres) MarkCategoryAsRead(userID, categoryID int64, before time.Time) error {
 	query := `
 		UPDATE
 			entries
@@ -657,7 +653,7 @@ func (s *Storage) MarkCategoryAsRead(userID, categoryID int64, before time.Time)
 		AND
 			feeds.category_id=$5
 	`
-	result, err := s.db.Exec(query, model.EntryStatusRead, userID, model.EntryStatusUnread, before, categoryID)
+	result, err := p.db.Exec(query, model.EntryStatusRead, userID, model.EntryStatusUnread, before, categoryID)
 	if err != nil {
 		return fmt.Errorf(`store: unable to mark category entries as read: %v`, err)
 	}
@@ -675,9 +671,9 @@ func (s *Storage) MarkCategoryAsRead(userID, categoryID int64, before time.Time)
 
 // EntryShareCode returns the share code of the provided entry.
 // It generates a new one if not already defined.
-func (s *Storage) EntryShareCode(userID int64, entryID int64) (shareCode string, err error) {
+func (p *Postgres) EntryShareCode(userID int64, entryID int64) (shareCode string, err error) {
 	query := `SELECT share_code FROM entries WHERE user_id=$1 AND id=$2`
-	err = s.db.QueryRow(query, userID, entryID).Scan(&shareCode)
+	err = p.db.QueryRow(query, userID, entryID).Scan(&shareCode)
 	if err != nil {
 		err = fmt.Errorf(`store: unable to get share code for entry #%d: %v`, entryID, err)
 		return
@@ -687,7 +683,7 @@ func (s *Storage) EntryShareCode(userID int64, entryID int64) (shareCode string,
 		shareCode = crypto.GenerateRandomStringHex(20)
 
 		query = `UPDATE entries SET share_code = $1 WHERE user_id=$2 AND id=$3`
-		_, err = s.db.Exec(query, shareCode, userID, entryID)
+		_, err = p.db.Exec(query, shareCode, userID, entryID)
 		if err != nil {
 			err = fmt.Errorf(`store: unable to set share code for entry #%d: %v`, entryID, err)
 			return
@@ -698,9 +694,9 @@ func (s *Storage) EntryShareCode(userID int64, entryID int64) (shareCode string,
 }
 
 // UnshareEntry removes the share code for the given entry.
-func (s *Storage) UnshareEntry(userID int64, entryID int64) (err error) {
+func (p *Postgres) UnshareEntry(userID int64, entryID int64) (err error) {
 	query := `UPDATE entries SET share_code='' WHERE user_id=$1 AND id=$2`
-	_, err = s.db.Exec(query, userID, entryID)
+	_, err = p.db.Exec(query, userID, entryID)
 	if err != nil {
 		err = fmt.Errorf(`store: unable to remove share code for entry #%d: %v`, entryID, err)
 	}

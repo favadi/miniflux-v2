@@ -10,24 +10,25 @@ import (
 
 	"miniflux.app/v2/internal/config"
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/querybuilder"
 	feedHandler "miniflux.app/v2/internal/reader/handler"
 	"miniflux.app/v2/internal/storage"
 )
 
-func refreshFeeds(store *storage.Storage) {
+func refreshFeeds(store storage.Storage) {
 	var wg sync.WaitGroup
 
 	startTime := time.Now()
 
 	// Generate a batch of feeds for any user that has feeds to refresh.
-	batchBuilder := store.NewBatchBuilder()
+	batchBuilder := querybuilder.NewBatchBuilder()
 	batchBuilder.WithBatchSize(config.Opts.BatchSize())
 	batchBuilder.WithErrorLimit(config.Opts.PollingParsingErrorLimit())
 	batchBuilder.WithoutDisabledFeeds()
 	batchBuilder.WithNextCheckExpired()
 	batchBuilder.WithLimitPerHost(config.Opts.PollingLimitPerHost())
 
-	jobs, err := batchBuilder.FetchJobs()
+	jobs, err := store.FetchJobs(batchBuilder)
 	if err != nil {
 		slog.Error("Unable to fetch jobs from database", slog.Any("error", err))
 		return

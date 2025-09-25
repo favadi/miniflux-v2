@@ -13,6 +13,7 @@ import (
 	"miniflux.app/v2/internal/http/response/html"
 	"miniflux.app/v2/internal/http/route"
 	"miniflux.app/v2/internal/locale"
+	"miniflux.app/v2/internal/querybuilder"
 	feedHandler "miniflux.app/v2/internal/reader/handler"
 	"miniflux.app/v2/internal/ui/session"
 )
@@ -44,12 +45,12 @@ func (h *handler) refreshAllFeeds(w http.ResponseWriter, r *http.Request) {
 		userID := request.UserID(r)
 		// We allow the end-user to force refresh all its feeds
 		// without taking into consideration the number of errors.
-		batchBuilder := h.store.NewBatchBuilder()
+		batchBuilder := querybuilder.NewBatchBuilder()
 		batchBuilder.WithoutDisabledFeeds()
 		batchBuilder.WithUserID(userID)
 		batchBuilder.WithLimitPerHost(config.Opts.PollingLimitPerHost())
 
-		jobs, err := batchBuilder.FetchJobs()
+		jobs, err := h.store.FetchJobs(batchBuilder)
 		if err != nil {
 			html.ServerError(w, r, err)
 			return

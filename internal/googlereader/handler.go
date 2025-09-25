@@ -20,6 +20,7 @@ import (
 	"miniflux.app/v2/internal/mediaproxy"
 	"miniflux.app/v2/internal/model"
 	"miniflux.app/v2/internal/proxyrotator"
+	"miniflux.app/v2/internal/querybuilder"
 	"miniflux.app/v2/internal/reader/fetcher"
 	mff "miniflux.app/v2/internal/reader/handler"
 	mfs "miniflux.app/v2/internal/reader/subscription"
@@ -30,7 +31,7 @@ import (
 )
 
 type handler struct {
-	store  *storage.Storage
+	store  storage.Storage
 	router *mux.Router
 }
 
@@ -41,7 +42,7 @@ var (
 )
 
 // Serve handles Google Reader API calls.
-func Serve(router *mux.Router, store *storage.Storage) {
+func Serve(router *mux.Router, store storage.Storage) {
 	handler := &handler{store, router}
 	router.HandleFunc("/accounts/ClientLogin", handler.clientLoginHandler).Methods(http.MethodPost).Name("ClientLogin")
 
@@ -304,11 +305,11 @@ func (h *handler) editTagHandler(w http.ResponseWriter, r *http.Request) {
 		slog.Any("tags", tags),
 	)
 
-	builder := h.store.NewEntryQueryBuilder(userID)
+	builder := querybuilder.NewEntryQueryBuilder(userID)
 	builder.WithEntryIDs(itemIDs)
 	builder.WithoutStatus(model.EntryStatusRemoved)
 
-	entries, err := builder.GetEntries()
+	entries, err := h.store.GetEntries(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -460,7 +461,7 @@ func (h *handler) quickAddHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func getFeed(stream Stream, store *storage.Storage, userID int64) (*model.Feed, error) {
+func getFeed(stream Stream, store storage.Storage, userID int64) (*model.Feed, error) {
 	feedID, err := strconv.ParseInt(stream.ID, 10, 64)
 	if err != nil {
 		return nil, err
@@ -468,7 +469,7 @@ func getFeed(stream Stream, store *storage.Storage, userID int64) (*model.Feed, 
 	return store.FeedByID(userID, feedID)
 }
 
-func getOrCreateCategory(streamCategory Stream, store *storage.Storage, userID int64) (*model.Category, error) {
+func getOrCreateCategory(streamCategory Stream, store storage.Storage, userID int64) (*model.Category, error) {
 	switch {
 	case streamCategory.ID == "":
 		return store.FirstCategory(userID)
@@ -481,7 +482,7 @@ func getOrCreateCategory(streamCategory Stream, store *storage.Storage, userID i
 	}
 }
 
-func subscribe(newFeed Stream, category Stream, title string, store *storage.Storage, userID int64) (*model.Feed, error) {
+func subscribe(newFeed Stream, category Stream, title string, store storage.Storage, userID int64) (*model.Feed, error) {
 	destCategory, err := getOrCreateCategory(category, store, userID)
 	if err != nil {
 		return nil, err
@@ -514,7 +515,7 @@ func subscribe(newFeed Stream, category Stream, title string, store *storage.Sto
 	return created, nil
 }
 
-func unsubscribe(streams []Stream, store *storage.Storage, userID int64) error {
+func unsubscribe(streams []Stream, store storage.Storage, userID int64) error {
 	for _, stream := range streams {
 		feedID, err := strconv.ParseInt(stream.ID, 10, 64)
 		if err != nil {
@@ -528,7 +529,7 @@ func unsubscribe(streams []Stream, store *storage.Storage, userID int64) error {
 	return nil
 }
 
-func rename(feedStream Stream, title string, store *storage.Storage, userID int64) error {
+func rename(feedStream Stream, title string, store storage.Storage, userID int64) error {
 	slog.Debug("[GoogleReader] Renaming feed",
 		slog.Int64("user_id", userID),
 		slog.Any("feed_stream", feedStream),
@@ -554,7 +555,7 @@ func rename(feedStream Stream, title string, store *storage.Storage, userID int6
 	return store.UpdateFeed(feed)
 }
 
-func move(feedStream Stream, labelStream Stream, store *storage.Storage, userID int64) error {
+func move(feedStream Stream, labelStream Stream, store storage.Storage, userID int64) error {
 	slog.Debug("[GoogleReader] Moving feed",
 		slog.Int64("user_id", userID),
 		slog.Any("feed_stream", feedStream),
@@ -718,13 +719,13 @@ func (h *handler) streamItemContentsHandler(w http.ResponseWriter, r *http.Reque
 		slog.Any("item_ids", itemIDs),
 	)
 
-	builder := h.store.NewEntryQueryBuilder(userID)
+	builder := querybuilder.NewEntryQueryBuilder(userID)
 	builder.WithEnclosures()
 	builder.WithoutStatus(model.EntryStatusRemoved)
 	builder.WithEntryIDs(itemIDs)
 	builder.WithSorting(model.DefaultSortingOrder, requestModifiers.SortDirection)
 
-	entries, err := builder.GetEntries()
+	entries, err := h.store.GetEntries(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -1079,7 +1080,7 @@ func (h *handler) handleReadingListStreamHandler(w http.ResponseWriter, r *http.
 		slog.String("user_agent", r.UserAgent()),
 	)
 
-	builder := h.store.NewEntryQueryBuilder(rm.UserID)
+	builder := querybuilder.NewEntryQueryBuilder(rm.UserID)
 	for _, s := range rm.ExcludeTargets {
 		switch s.Type {
 		case ReadStream:
@@ -1105,7 +1106,7 @@ func (h *handler) handleReadingListStreamHandler(w http.ResponseWriter, r *http.
 		builder.BeforePublishedDate(time.Unix(rm.StopTime, 0))
 	}
 
-	rawEntryIDs, err := builder.GetEntryIDs()
+	rawEntryIDs, err := h.store.GetEntryIDs(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -1116,7 +1117,7 @@ func (h *handler) handleReadingListStreamHandler(w http.ResponseWriter, r *http.
 		itemRefs = append(itemRefs, itemRef{ID: formattedID})
 	}
 
-	totalEntries, err := builder.CountEntries()
+	totalEntries, err := h.store.CountEntries(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -1130,7 +1131,7 @@ func (h *handler) handleReadingListStreamHandler(w http.ResponseWriter, r *http.
 }
 
 func (h *handler) handleStarredStreamHandler(w http.ResponseWriter, r *http.Request, rm RequestModifiers) {
-	builder := h.store.NewEntryQueryBuilder(rm.UserID)
+	builder := querybuilder.NewEntryQueryBuilder(rm.UserID)
 	builder.WithoutStatus(model.EntryStatusRemoved)
 	builder.WithStarred(true)
 	builder.WithLimit(rm.Count)
@@ -1143,7 +1144,7 @@ func (h *handler) handleStarredStreamHandler(w http.ResponseWriter, r *http.Requ
 		builder.BeforePublishedDate(time.Unix(rm.StopTime, 0))
 	}
 
-	rawEntryIDs, err := builder.GetEntryIDs()
+	rawEntryIDs, err := h.store.GetEntryIDs(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -1154,7 +1155,7 @@ func (h *handler) handleStarredStreamHandler(w http.ResponseWriter, r *http.Requ
 		itemRefs = append(itemRefs, itemRef{ID: formattedID})
 	}
 
-	totalEntries, err := builder.CountEntries()
+	totalEntries, err := h.store.CountEntries(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -1168,7 +1169,7 @@ func (h *handler) handleStarredStreamHandler(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *handler) handleReadStreamHandler(w http.ResponseWriter, r *http.Request, rm RequestModifiers) {
-	builder := h.store.NewEntryQueryBuilder(rm.UserID)
+	builder := querybuilder.NewEntryQueryBuilder(rm.UserID)
 	builder.WithoutStatus(model.EntryStatusRemoved)
 	builder.WithStatus(model.EntryStatusRead)
 	builder.WithLimit(rm.Count)
@@ -1181,7 +1182,7 @@ func (h *handler) handleReadStreamHandler(w http.ResponseWriter, r *http.Request
 		builder.BeforePublishedDate(time.Unix(rm.StopTime, 0))
 	}
 
-	rawEntryIDs, err := builder.GetEntryIDs()
+	rawEntryIDs, err := h.store.GetEntryIDs(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -1192,7 +1193,7 @@ func (h *handler) handleReadStreamHandler(w http.ResponseWriter, r *http.Request
 		itemRefs = append(itemRefs, itemRef{ID: formattedID})
 	}
 
-	totalEntries, err := builder.CountEntries()
+	totalEntries, err := h.store.CountEntries(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -1212,7 +1213,7 @@ func (h *handler) handleFeedStreamHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	builder := h.store.NewEntryQueryBuilder(rm.UserID)
+	builder := querybuilder.NewEntryQueryBuilder(rm.UserID)
 	builder.WithoutStatus(model.EntryStatusRemoved)
 	builder.WithFeedID(feedID)
 	builder.WithLimit(rm.Count)
@@ -1235,7 +1236,7 @@ func (h *handler) handleFeedStreamHandler(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	rawEntryIDs, err := builder.GetEntryIDs()
+	rawEntryIDs, err := h.store.GetEntryIDs(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -1247,7 +1248,7 @@ func (h *handler) handleFeedStreamHandler(w http.ResponseWriter, r *http.Request
 		itemRefs = append(itemRefs, itemRef{ID: formattedID})
 	}
 
-	totalEntries, err := builder.CountEntries()
+	totalEntries, err := h.store.CountEntries(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return

@@ -10,7 +10,7 @@ import (
 )
 
 // ValidateFeedCreation validates feed creation.
-func ValidateFeedCreation(store *storage.Storage, userID int64, request *model.FeedCreationRequest) *locale.LocalizedError {
+func ValidateFeedCreation(store storage.Storage, userID int64, request *model.FeedCreationRequest) *locale.LocalizedError {
 	if request.FeedURL == "" || request.CategoryID <= 0 {
 		return locale.NewLocalizedError("error.feed_mandatory_fields")
 	}
@@ -43,7 +43,7 @@ func ValidateFeedCreation(store *storage.Storage, userID int64, request *model.F
 }
 
 // ValidateFeedModification validates feed modification.
-func ValidateFeedModification(store *storage.Storage, userID, feedID int64, request *model.FeedModificationRequest) *locale.LocalizedError {
+func ValidateFeedModification(store storage.Storage, userID, feedID int64, request *model.FeedModificationRequest) *locale.LocalizedError {
 	if request.FeedURL != nil {
 		if *request.FeedURL == "" {
 			return locale.NewLocalizedError("error.feed_url_not_empty")

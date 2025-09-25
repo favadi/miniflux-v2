@@ -14,10 +14,10 @@ import (
 )
 
 type middleware struct {
-	store *storage.Storage
+	store storage.Storage
 }
 
-func newMiddleware(s *storage.Storage) *middleware {
+func newMiddleware(s storage.Storage) *middleware {
 	return &middleware{s}
 }
 

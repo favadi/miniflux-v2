@@ -10,7 +10,7 @@ import (
 	"miniflux.app/v2/internal/storage"
 )
 
-func exportUserFeeds(store *storage.Storage, username string) {
+func exportUserFeeds(store storage.Storage, username string) {
 	user, err := store.UserByUsername(username)
 	if err != nil {
 		printErrorAndExit(fmt.Errorf("unable to find user: %w", err))

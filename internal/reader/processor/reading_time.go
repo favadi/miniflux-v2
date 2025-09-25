@@ -58,7 +58,7 @@ func fetchWatchTime(websiteURL, query string, isoDate bool) (int, error) {
 	return ret, nil
 }
 
-func updateEntryReadingTime(store *storage.Storage, feed *model.Feed, entry *model.Entry, entryIsNew bool, user *model.User) {
+func updateEntryReadingTime(store storage.Storage, feed *model.Feed, entry *model.Entry, entryIsNew bool, user *model.User) {
 	if !user.ShowReadingTime {
 		slog.Debug("Skip reading time estimation for this user", slog.Int64("user_id", user.ID))
 		return

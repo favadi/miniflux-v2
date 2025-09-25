@@ -12,7 +12,7 @@ import (
 	"miniflux.app/v2/internal/validator"
 )
 
-func resetPassword(store *storage.Storage) {
+func resetPassword(store storage.Storage) {
 	username, password := askCredentials()
 	user, err := store.UserByUsername(username)
 	if err != nil {

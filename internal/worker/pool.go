@@ -21,7 +21,7 @@ func (p *Pool) Push(jobs model.JobList) {
 }
 
 // NewPool creates a pool of background workers.
-func NewPool(store *storage.Storage, nbWorkers int) *Pool {
+func NewPool(store storage.Storage, nbWorkers int) *Pool {
 	workerPool := &Pool{
 		queue: make(chan model.Job),
 	}

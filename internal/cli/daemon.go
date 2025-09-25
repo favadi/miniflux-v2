@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/crypto/acme/autocert"
+
 	"miniflux.app/v2/internal/config"
 	"miniflux.app/v2/internal/http/server"
 	"miniflux.app/v2/internal/metric"
@@ -20,7 +22,7 @@ import (
 	"miniflux.app/v2/internal/worker"
 )
 
-func startDaemon(store *storage.Storage) {
+func startDaemon(store storage.Storage, cc autocert.Cache) {
 	slog.Debug("Starting daemon...")
 
 	stop := make(chan os.Signal, 1)
@@ -35,7 +37,7 @@ func startDaemon(store *storage.Storage) {
 
 	var httpServers []*http.Server
 	if config.Opts.HasHTTPService() {
-		httpServers = server.StartWebServer(store, pool)
+		httpServers = server.StartWebServer(store, cc, pool)
 	}
 
 	if config.Opts.HasMetricsCollector() {

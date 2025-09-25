@@ -9,7 +9,7 @@ import (
 	"miniflux.app/v2/internal/storage"
 )
 
-func flushSessions(store *storage.Storage) {
+func flushSessions(store storage.Storage) {
 	fmt.Println("Flushing all sessions (disconnect users)")
 	if err := store.FlushAllSessions(); err != nil {
 		printErrorAndExit(err)

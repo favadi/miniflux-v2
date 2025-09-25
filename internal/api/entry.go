@@ -16,14 +16,14 @@ import (
 	"miniflux.app/v2/internal/integration"
 	"miniflux.app/v2/internal/mediaproxy"
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/querybuilder"
 	"miniflux.app/v2/internal/reader/processor"
 	"miniflux.app/v2/internal/reader/readingtime"
-	"miniflux.app/v2/internal/storage"
 	"miniflux.app/v2/internal/validator"
 )
 
-func (h *handler) getEntryFromBuilder(w http.ResponseWriter, r *http.Request, b *storage.EntryQueryBuilder) {
-	entry, err := b.GetEntry()
+func (h *handler) getEntryFromBuilder(w http.ResponseWriter, r *http.Request, b *querybuilder.EntryQueryBuilder) {
+	entry, err := h.store.GetEntry(b)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -44,7 +44,7 @@ func (h *handler) getFeedEntry(w http.ResponseWriter, r *http.Request) {
 	feedID := request.RouteInt64Param(r, "feedID")
 	entryID := request.RouteInt64Param(r, "entryID")
 
-	builder := h.store.NewEntryQueryBuilder(request.UserID(r))
+	builder := querybuilder.NewEntryQueryBuilder(request.UserID(r))
 	builder.WithFeedID(feedID)
 	builder.WithEntryID(entryID)
 	builder.WithoutStatus(model.EntryStatusRemoved)
@@ -56,7 +56,7 @@ func (h *handler) getCategoryEntry(w http.ResponseWriter, r *http.Request) {
 	categoryID := request.RouteInt64Param(r, "categoryID")
 	entryID := request.RouteInt64Param(r, "entryID")
 
-	builder := h.store.NewEntryQueryBuilder(request.UserID(r))
+	builder := querybuilder.NewEntryQueryBuilder(request.UserID(r))
 	builder.WithCategoryID(categoryID)
 	builder.WithEntryID(entryID)
 	builder.WithoutStatus(model.EntryStatusRemoved)
@@ -66,7 +66,7 @@ func (h *handler) getCategoryEntry(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) getEntry(w http.ResponseWriter, r *http.Request) {
 	entryID := request.RouteInt64Param(r, "entryID")
-	builder := h.store.NewEntryQueryBuilder(request.UserID(r))
+	builder := querybuilder.NewEntryQueryBuilder(request.UserID(r))
 	builder.WithEntryID(entryID)
 	builder.WithoutStatus(model.EntryStatusRemoved)
 
@@ -130,7 +130,7 @@ func (h *handler) findEntries(w http.ResponseWriter, r *http.Request, feedID int
 
 	tags := request.QueryStringParamList(r, "tags")
 
-	builder := h.store.NewEntryQueryBuilder(userID)
+	builder := querybuilder.NewEntryQueryBuilder(userID)
 	builder.WithFeedID(feedID)
 	builder.WithCategoryID(categoryID)
 	builder.WithStatuses(statuses)
@@ -151,13 +151,13 @@ func (h *handler) findEntries(w http.ResponseWriter, r *http.Request, feedID int
 
 	configureFilters(builder, r)
 
-	entries, err := builder.GetEntries()
+	entries, err := h.store.GetEntries(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
 	}
 
-	count, err := builder.CountEntries()
+	count, err := h.store.CountEntries(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -202,7 +202,7 @@ func (h *handler) toggleStarred(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) saveEntry(w http.ResponseWriter, r *http.Request) {
 	entryID := request.RouteInt64Param(r, "entryID")
-	builder := h.store.NewEntryQueryBuilder(request.UserID(r))
+	builder := querybuilder.NewEntryQueryBuilder(request.UserID(r))
 	builder.WithEntryID(entryID)
 	builder.WithoutStatus(model.EntryStatusRemoved)
 
@@ -211,7 +211,7 @@ func (h *handler) saveEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, err := builder.GetEntry()
+	entry, err := h.store.GetEntry(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -248,11 +248,11 @@ func (h *handler) updateEntry(w http.ResponseWriter, r *http.Request) {
 	loggedUserID := request.UserID(r)
 	entryID := request.RouteInt64Param(r, "entryID")
 
-	entryBuilder := h.store.NewEntryQueryBuilder(loggedUserID)
+	entryBuilder := querybuilder.NewEntryQueryBuilder(loggedUserID)
 	entryBuilder.WithEntryID(entryID)
 	entryBuilder.WithoutStatus(model.EntryStatusRemoved)
 
-	entry, err := entryBuilder.GetEntry()
+	entry, err := h.store.GetEntry(entryBuilder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -291,11 +291,11 @@ func (h *handler) fetchContent(w http.ResponseWriter, r *http.Request) {
 	loggedUserID := request.UserID(r)
 	entryID := request.RouteInt64Param(r, "entryID")
 
-	entryBuilder := h.store.NewEntryQueryBuilder(loggedUserID)
+	entryBuilder := querybuilder.NewEntryQueryBuilder(loggedUserID)
 	entryBuilder.WithEntryID(entryID)
 	entryBuilder.WithoutStatus(model.EntryStatusRemoved)
 
-	entry, err := entryBuilder.GetEntry()
+	entry, err := h.store.GetEntry(entryBuilder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -317,9 +317,9 @@ func (h *handler) fetchContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	feedBuilder := storage.NewFeedQueryBuilder(h.store, loggedUserID)
+	feedBuilder := querybuilder.NewFeedQueryBuilder(loggedUserID)
 	feedBuilder.WithFeedID(entry.FeedID)
-	feed, err := feedBuilder.GetFeed()
+	feed, err := h.store.GetFeed(feedBuilder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -356,7 +356,7 @@ func (h *handler) flushHistory(w http.ResponseWriter, r *http.Request) {
 	json.Accepted(w, r)
 }
 
-func configureFilters(builder *storage.EntryQueryBuilder, r *http.Request) {
+func configureFilters(builder *querybuilder.EntryQueryBuilder, r *http.Request) {
 	if beforeEntryID := request.QueryInt64Param(r, "before_entry_id", 0); beforeEntryID > 0 {
 		builder.BeforeEntryID(beforeEntryID)
 	}

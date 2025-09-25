@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright The Miniflux Authors. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package storage // import "miniflux.app/v2/internal/storage"
+package postgres // import "miniflux.app/v2/internal/storage/postgres"
 
 import (
 	"crypto/rand"
@@ -13,8 +13,8 @@ import (
 )
 
 // CreateAppSessionWithUserPrefs creates a new application session with the given user preferences.
-func (s *Storage) CreateAppSessionWithUserPrefs(userID int64) (*model.Session, error) {
-	user, err := s.UserByID(userID)
+func (p *Postgres) CreateAppSessionWithUserPrefs(userID int64) (*model.Session, error) {
+	user, err := p.UserByID(userID)
 	if err != nil {
 		return nil, err
 	}
@@ -28,11 +28,11 @@ func (s *Storage) CreateAppSessionWithUserPrefs(userID int64) (*model.Session, e
 		},
 	}
 
-	return s.createAppSession(&session)
+	return p.createAppSession(&session)
 }
 
 // CreateAppSession creates a new application session.
-func (s *Storage) CreateAppSession() (*model.Session, error) {
+func (p *Postgres) CreateAppSession() (*model.Session, error) {
 	session := model.Session{
 		ID: rand.Text(),
 		Data: &model.SessionData{
@@ -40,12 +40,12 @@ func (s *Storage) CreateAppSession() (*model.Session, error) {
 		},
 	}
 
-	return s.createAppSession(&session)
+	return p.createAppSession(&session)
 }
 
-func (s *Storage) createAppSession(session *model.Session) (*model.Session, error) {
+func (p *Postgres) createAppSession(session *model.Session) (*model.Session, error) {
 	query := `INSERT INTO sessions (id, data) VALUES ($1, $2)`
-	_, err := s.db.Exec(query, session.ID, session.Data)
+	_, err := p.db.Exec(query, session.ID, session.Data)
 	if err != nil {
 		return nil, fmt.Errorf(`store: unable to create app session: %v`, err)
 	}
@@ -54,7 +54,7 @@ func (s *Storage) createAppSession(session *model.Session) (*model.Session, erro
 }
 
 // UpdateAppSessionField updates only one session field.
-func (s *Storage) UpdateAppSessionField(sessionID, field string, value any) error {
+func (p *Postgres) UpdateAppSessionField(sessionID, field string, value any) error {
 	query := `
 		UPDATE
 			sessions
@@ -63,7 +63,7 @@ func (s *Storage) UpdateAppSessionField(sessionID, field string, value any) erro
 		WHERE
 			id=$2
 	`
-	_, err := s.db.Exec(fmt.Sprintf(query, field), value, sessionID)
+	_, err := p.db.Exec(fmt.Sprintf(query, field), value, sessionID)
 	if err != nil {
 		return fmt.Errorf(`store: unable to update session field: %v`, err)
 	}
@@ -71,7 +71,7 @@ func (s *Storage) UpdateAppSessionField(sessionID, field string, value any) erro
 	return nil
 }
 
-func (s *Storage) UpdateAppSessionObjectField(sessionID, field string, value any) error {
+func (p *Postgres) UpdateAppSessionObjectField(sessionID, field string, value any) error {
 	query := `
 		UPDATE
 			sessions
@@ -80,7 +80,7 @@ func (s *Storage) UpdateAppSessionObjectField(sessionID, field string, value any
 		WHERE
 			id=$2
 	`
-	_, err := s.db.Exec(fmt.Sprintf(query, field), value, sessionID)
+	_, err := p.db.Exec(fmt.Sprintf(query, field), value, sessionID)
 	if err != nil {
 		return fmt.Errorf(`store: unable to update session field: %v`, err)
 	}
@@ -89,11 +89,11 @@ func (s *Storage) UpdateAppSessionObjectField(sessionID, field string, value any
 }
 
 // AppSession returns the given session.
-func (s *Storage) AppSession(id string) (*model.Session, error) {
+func (p *Postgres) AppSession(id string) (*model.Session, error) {
 	var session model.Session
 
 	query := "SELECT id, data FROM sessions WHERE id=$1"
-	err := s.db.QueryRow(query, id).Scan(
+	err := p.db.QueryRow(query, id).Scan(
 		&session.ID,
 		&session.Data,
 	)
@@ -109,13 +109,13 @@ func (s *Storage) AppSession(id string) (*model.Session, error) {
 }
 
 // FlushAllSessions removes all sessions from the database.
-func (s *Storage) FlushAllSessions() (err error) {
-	_, err = s.db.Exec(`DELETE FROM user_sessions`)
+func (p *Postgres) FlushAllSessions() (err error) {
+	_, err = p.db.Exec(`DELETE FROM user_sessions`)
 	if err != nil {
 		return err
 	}
 
-	_, err = s.db.Exec(`DELETE FROM sessions`)
+	_, err = p.db.Exec(`DELETE FROM sessions`)
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func (s *Storage) FlushAllSessions() (err error) {
 }
 
 // CleanOldSessions removes sessions older than specified interval (24h minimum).
-func (s *Storage) CleanOldSessions(interval time.Duration) int64 {
+func (p *Postgres) CleanOldSessions(interval time.Duration) int64 {
 	query := `
 		DELETE FROM
 			sessions
@@ -134,7 +134,7 @@ func (s *Storage) CleanOldSessions(interval time.Duration) int64 {
 
 	days := max(int(interval/(24*time.Hour)), 1)
 
-	result, err := s.db.Exec(query, fmt.Sprintf("%d days", days))
+	result, err := p.db.Exec(query, fmt.Sprintf("%d days", days))
 	if err != nil {
 		return 0
 	}

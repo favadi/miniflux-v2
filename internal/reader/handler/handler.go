@@ -27,7 +27,7 @@ var (
 	ErrDuplicatedFeed   = errors.New("fetcher: duplicated feed")
 )
 
-func CreateFeedFromSubscriptionDiscovery(store *storage.Storage, userID int64, feedCreationRequest *model.FeedCreationRequestFromSubscriptionDiscovery) (*model.Feed, *locale.LocalizedErrorWrapper) {
+func CreateFeedFromSubscriptionDiscovery(store storage.Storage, userID int64, feedCreationRequest *model.FeedCreationRequestFromSubscriptionDiscovery) (*model.Feed, *locale.LocalizedErrorWrapper) {
 	slog.Debug("Begin feed creation process from subscription discovery",
 		slog.Int64("user_id", userID),
 		slog.String("feed_url", feedCreationRequest.FeedURL),
@@ -102,7 +102,7 @@ func CreateFeedFromSubscriptionDiscovery(store *storage.Storage, userID int64, f
 }
 
 // CreateFeed fetch, parse and store a new feed.
-func CreateFeed(store *storage.Storage, userID int64, feedCreationRequest *model.FeedCreationRequest) (*model.Feed, *locale.LocalizedErrorWrapper) {
+func CreateFeed(store storage.Storage, userID int64, feedCreationRequest *model.FeedCreationRequest) (*model.Feed, *locale.LocalizedErrorWrapper) {
 	slog.Debug("Begin feed creation process",
 		slog.Int64("user_id", userID),
 		slog.String("feed_url", feedCreationRequest.FeedURL),
@@ -192,7 +192,7 @@ func CreateFeed(store *storage.Storage, userID int64, feedCreationRequest *model
 }
 
 // RefreshFeed refreshes a feed.
-func RefreshFeed(store *storage.Storage, userID, feedID int64, forceRefresh bool) *locale.LocalizedErrorWrapper {
+func RefreshFeed(store storage.Storage, userID, feedID int64, forceRefresh bool) *locale.LocalizedErrorWrapper {
 	slog.Debug("Begin feed refresh process",
 		slog.Int64("user_id", userID),
 		slog.Int64("feed_id", feedID),

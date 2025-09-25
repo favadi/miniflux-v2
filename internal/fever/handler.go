@@ -15,13 +15,14 @@ import (
 	"miniflux.app/v2/internal/integration"
 	"miniflux.app/v2/internal/mediaproxy"
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/querybuilder"
 	"miniflux.app/v2/internal/storage"
 
 	"github.com/gorilla/mux"
 )
 
 // Serve handles Fever API calls.
-func Serve(router *mux.Router, store *storage.Storage) {
+func Serve(router *mux.Router, store storage.Storage) {
 	handler := &handler{store, router}
 
 	sr := router.PathPrefix("/fever").Subrouter()
@@ -30,7 +31,7 @@ func Serve(router *mux.Router, store *storage.Storage) {
 }
 
 type handler struct {
-	store  *storage.Storage
+	store  storage.Storage
 	router *mux.Router
 }
 
@@ -244,7 +245,7 @@ func (h *handler) handleItems(w http.ResponseWriter, r *http.Request) {
 
 	userID := request.UserID(r)
 
-	builder := h.store.NewEntryQueryBuilder(userID)
+	builder := querybuilder.NewEntryQueryBuilder(userID)
 	builder.WithoutStatus(model.EntryStatusRemoved)
 	builder.WithLimit(50)
 
@@ -293,15 +294,15 @@ func (h *handler) handleItems(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
-	entries, err := builder.GetEntries()
+	entries, err := h.store.GetEntries(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
 	}
 
-	builder = h.store.NewEntryQueryBuilder(userID)
+	builder = querybuilder.NewEntryQueryBuilder(userID)
 	builder.WithoutStatus(model.EntryStatusRemoved)
-	result.Total, err = builder.CountEntries()
+	result.Total, err = h.store.CountEntries(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -350,9 +351,9 @@ func (h *handler) handleUnreadItems(w http.ResponseWriter, r *http.Request) {
 		slog.Int64("user_id", userID),
 	)
 
-	builder := h.store.NewEntryQueryBuilder(userID)
+	builder := querybuilder.NewEntryQueryBuilder(userID)
 	builder.WithStatus(model.EntryStatusUnread)
-	rawEntryIDs, err := builder.GetEntryIDs()
+	rawEntryIDs, err := h.store.GetEntryIDs(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -383,10 +384,10 @@ func (h *handler) handleSavedItems(w http.ResponseWriter, r *http.Request) {
 		slog.Int64("user_id", userID),
 	)
 
-	builder := h.store.NewEntryQueryBuilder(userID)
+	builder := querybuilder.NewEntryQueryBuilder(userID)
 	builder.WithStarred(true)
 
-	entryIDs, err := builder.GetEntryIDs()
+	entryIDs, err := h.store.GetEntryIDs(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -418,11 +419,11 @@ func (h *handler) handleWriteItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	builder := h.store.NewEntryQueryBuilder(userID)
+	builder := querybuilder.NewEntryQueryBuilder(userID)
 	builder.WithEntryID(entryID)
 	builder.WithoutStatus(model.EntryStatusRemoved)
 
-	entry, err := builder.GetEntry()
+	entry, err := h.store.GetEntry(builder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return

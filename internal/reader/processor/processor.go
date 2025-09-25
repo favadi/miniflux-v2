@@ -24,7 +24,7 @@ import (
 )
 
 // ProcessFeedEntries downloads original web page for entries and apply filters.
-func ProcessFeedEntries(store *storage.Storage, feed *model.Feed, userID int64, forceRefresh bool) {
+func ProcessFeedEntries(store storage.Storage, feed *model.Feed, userID int64, forceRefresh bool) {
 	var filteredEntries model.Entries
 
 	user, storeErr := store.UserByID(userID)

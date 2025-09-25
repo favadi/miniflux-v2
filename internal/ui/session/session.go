@@ -12,12 +12,12 @@ import (
 
 // Session handles session data.
 type Session struct {
-	store     *storage.Storage
+	store     storage.Storage
 	sessionID string
 }
 
 // New returns a new session handler.
-func New(store *storage.Storage, sessionID string) *Session {
+func New(store storage.Storage, sessionID string) *Session {
 	return &Session{store, sessionID}
 }
 

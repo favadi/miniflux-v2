@@ -10,6 +10,7 @@ import (
 	"miniflux.app/v2/internal/http/response/html"
 	"miniflux.app/v2/internal/http/route"
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/querybuilder"
 	"miniflux.app/v2/internal/ui/session"
 	"miniflux.app/v2/internal/ui/view"
 )
@@ -28,19 +29,19 @@ func (h *handler) showSearchPage(w http.ResponseWriter, r *http.Request) {
 	var entriesCount int
 
 	if searchQuery != "" {
-		builder := h.store.NewEntryQueryBuilder(user.ID)
+		builder := querybuilder.NewEntryQueryBuilder(user.ID)
 		builder.WithSearchQuery(searchQuery)
 		builder.WithoutStatus(model.EntryStatusRemoved)
 		builder.WithOffset(offset)
 		builder.WithLimit(user.EntriesPerPage)
 
-		entries, err = builder.GetEntries()
+		entries, err = h.store.GetEntries(builder)
 		if err != nil {
 			html.ServerError(w, r, err)
 			return
 		}
 
-		entriesCount, err = builder.CountEntries()
+		entriesCount, err = h.store.CountEntries(builder)
 		if err != nil {
 			html.ServerError(w, r, err)
 			return

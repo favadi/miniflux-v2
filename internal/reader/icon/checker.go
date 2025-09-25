@@ -14,11 +14,11 @@ import (
 )
 
 type iconChecker struct {
-	store *storage.Storage
+	store storage.Storage
 	feed  *model.Feed
 }
 
-func NewIconChecker(store *storage.Storage, feed *model.Feed) *iconChecker {
+func NewIconChecker(store storage.Storage, feed *model.Feed) *iconChecker {
 	return &iconChecker{
 		store: store,
 		feed:  feed,

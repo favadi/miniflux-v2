@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright The Miniflux Authors. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package storage // import "miniflux.app/v2/internal/storage"
+package postgres // import "miniflux.app/v2/internal/storage/postgres"
 
 import (
 	"context"
@@ -15,14 +15,14 @@ var _ autocert.Cache = (*CertificateCache)(nil)
 
 // CertificateCache provides a SQL backend to the autocert cache.
 type CertificateCache struct {
-	storage *Storage
+	db *sql.DB
 }
 
 // NewCertificateCache creates an cache instance that can be used with autocert.Cache.
 // It returns any errors that could happen while connecting to SQL.
-func NewCertificateCache(storage *Storage) *CertificateCache {
+func NewCertificateCache(db *sql.DB) *CertificateCache {
 	return &CertificateCache{
-		storage: storage,
+		db: db,
 	}
 }
 
@@ -31,7 +31,7 @@ func NewCertificateCache(storage *Storage) *CertificateCache {
 func (c *CertificateCache) Get(ctx context.Context, key string) ([]byte, error) {
 	query := `SELECT data::bytea FROM acme_cache WHERE key = $1`
 	var data []byte
-	err := c.storage.db.QueryRowContext(ctx, query, key).Scan(&data)
+	err := c.db.QueryRowContext(ctx, query, key).Scan(&data)
 	if err == sql.ErrNoRows {
 		return nil, autocert.ErrCacheMiss
 	}
@@ -43,7 +43,7 @@ func (c *CertificateCache) Get(ctx context.Context, key string) ([]byte, error) 
 func (c *CertificateCache) Put(ctx context.Context, key string, data []byte) error {
 	query := `INSERT INTO acme_cache (key, data, updated_at) VALUES($1, $2::bytea, now())
 	          ON CONFLICT (key) DO UPDATE SET data = $2::bytea, updated_at = now()`
-	_, err := c.storage.db.ExecContext(ctx, query, key, data)
+	_, err := c.db.ExecContext(ctx, query, key, data)
 	if err != nil {
 		return err
 	}
@@ -54,7 +54,7 @@ func (c *CertificateCache) Put(ctx context.Context, key string, data []byte) err
 // If there's no such key in the cache, Delete returns nil.
 func (c *CertificateCache) Delete(ctx context.Context, key string) error {
 	query := `DELETE FROM acme_cache WHERE key = $1`
-	_, err := c.storage.db.ExecContext(ctx, query, key)
+	_, err := c.db.ExecContext(ctx, query, key)
 	if err != nil {
 		return err
 	}

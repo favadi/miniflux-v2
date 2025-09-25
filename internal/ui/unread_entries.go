@@ -10,6 +10,7 @@ import (
 	"miniflux.app/v2/internal/http/response/html"
 	"miniflux.app/v2/internal/http/route"
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/querybuilder"
 	"miniflux.app/v2/internal/ui/session"
 	"miniflux.app/v2/internal/ui/view"
 )
@@ -22,10 +23,10 @@ func (h *handler) showUnreadPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	offset := request.QueryIntParam(r, "offset", 0)
-	builder := h.store.NewEntryQueryBuilder(user.ID)
+	builder := querybuilder.NewEntryQueryBuilder(user.ID)
 	builder.WithStatus(model.EntryStatusUnread)
 	builder.WithGloballyVisible()
-	countUnread, err := builder.CountEntries()
+	countUnread, err := h.store.CountEntries(builder)
 	if err != nil {
 		html.ServerError(w, r, err)
 		return
@@ -35,14 +36,14 @@ func (h *handler) showUnreadPage(w http.ResponseWriter, r *http.Request) {
 		offset = 0
 	}
 
-	builder = h.store.NewEntryQueryBuilder(user.ID)
+	builder = querybuilder.NewEntryQueryBuilder(user.ID)
 	builder.WithStatus(model.EntryStatusUnread)
 	builder.WithSorting(user.EntryOrder, user.EntryDirection)
 	builder.WithSorting("id", user.EntryDirection)
 	builder.WithOffset(offset)
 	builder.WithLimit(user.EntriesPerPage)
 	builder.WithGloballyVisible()
-	entries, err := builder.GetEntries()
+	entries, err := h.store.GetEntries(builder)
 	if err != nil {
 		html.ServerError(w, r, err)
 		return

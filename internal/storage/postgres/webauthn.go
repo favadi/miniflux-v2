@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright The Miniflux Authors. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package storage // import "miniflux.app/v2/internal/storage"
+package postgres // import "miniflux.app/v2/internal/storage/postgres"
 
 import (
 	"database/sql"
@@ -13,14 +13,14 @@ import (
 )
 
 // AddWebAuthnCredential handles storage of webauthn credentials.
-func (s *Storage) AddWebAuthnCredential(userID int64, handle []byte, credential *webauthn.Credential) error {
+func (p *Postgres) AddWebAuthnCredential(userID int64, handle []byte, credential *webauthn.Credential) error {
 	query := `
 		INSERT INTO webauthn_credentials
 			(handle, cred_id, user_id, public_key, attestation_type, aaguid, sign_count, clone_warning) 
 		VALUES
 			($1, $2, $3, $4, $5, $6, $7, $8)
 	`
-	_, err := s.db.Exec(
+	_, err := p.db.Exec(
 		query,
 		handle,
 		credential.ID,
@@ -34,7 +34,7 @@ func (s *Storage) AddWebAuthnCredential(userID int64, handle []byte, credential 
 	return err
 }
 
-func (s *Storage) WebAuthnCredentialByHandle(handle []byte) (int64, *model.WebAuthnCredential, error) {
+func (p *Postgres) WebAuthnCredentialByHandle(handle []byte) (int64, *model.WebAuthnCredential, error) {
 	var credential model.WebAuthnCredential
 	var userID int64
 	query := `
@@ -55,7 +55,7 @@ func (s *Storage) WebAuthnCredentialByHandle(handle []byte) (int64, *model.WebAu
 			handle = $1
 	`
 	var nullName sql.NullString
-	err := s.db.
+	err := p.db.
 		QueryRow(query, handle).
 		Scan(
 			&userID,
@@ -83,7 +83,7 @@ func (s *Storage) WebAuthnCredentialByHandle(handle []byte) (int64, *model.WebAu
 	return userID, &credential, err
 }
 
-func (s *Storage) WebAuthnCredentialsByUserID(userID int64) ([]model.WebAuthnCredential, error) {
+func (p *Postgres) WebAuthnCredentialsByUserID(userID int64) ([]model.WebAuthnCredential, error) {
 	query := `
 		SELECT
 			handle,
@@ -101,7 +101,7 @@ func (s *Storage) WebAuthnCredentialsByUserID(userID int64) ([]model.WebAuthnCre
 		WHERE
 			user_id = $1
 	`
-	rows, err := s.db.Query(query, userID)
+	rows, err := p.db.Query(query, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -138,28 +138,28 @@ func (s *Storage) WebAuthnCredentialsByUserID(userID int64) ([]model.WebAuthnCre
 	return creds, nil
 }
 
-func (s *Storage) WebAuthnSaveLogin(handle []byte) error {
+func (p *Postgres) WebAuthnSaveLogin(handle []byte) error {
 	query := "UPDATE webauthn_credentials SET last_seen_on=NOW() WHERE handle=$1"
-	_, err := s.db.Exec(query, handle)
+	_, err := p.db.Exec(query, handle)
 	if err != nil {
 		return fmt.Errorf(`store: unable to update last seen date for webauthn credential: %v`, err)
 	}
 	return nil
 }
 
-func (s *Storage) WebAuthnUpdateName(handle []byte, name string) error {
+func (p *Postgres) WebAuthnUpdateName(handle []byte, name string) error {
 	query := "UPDATE webauthn_credentials SET name=$1 WHERE handle=$2"
-	_, err := s.db.Exec(query, name, handle)
+	_, err := p.db.Exec(query, name, handle)
 	if err != nil {
 		return fmt.Errorf(`store: unable to update name for webauthn credential: %v`, err)
 	}
 	return nil
 }
 
-func (s *Storage) CountWebAuthnCredentialsByUserID(userID int64) int {
+func (p *Postgres) CountWebAuthnCredentialsByUserID(userID int64) int {
 	var count int
 	query := "SELECT COUNT(*) FROM webauthn_credentials WHERE user_id = $1"
-	err := s.db.QueryRow(query, userID).Scan(&count)
+	err := p.db.QueryRow(query, userID).Scan(&count)
 	if err != nil {
 		slog.Error("store: unable to count webauthn certs for user",
 			slog.Int64("user_id", userID),
@@ -170,14 +170,14 @@ func (s *Storage) CountWebAuthnCredentialsByUserID(userID int64) int {
 	return count
 }
 
-func (s *Storage) DeleteCredentialByHandle(userID int64, handle []byte) error {
+func (p *Postgres) DeleteCredentialByHandle(userID int64, handle []byte) error {
 	query := "DELETE FROM webauthn_credentials WHERE user_id = $1 AND handle = $2"
-	_, err := s.db.Exec(query, userID, handle)
+	_, err := p.db.Exec(query, userID, handle)
 	return err
 }
 
-func (s *Storage) DeleteAllWebAuthnCredentialsByUserID(userID int64) error {
+func (p *Postgres) DeleteAllWebAuthnCredentialsByUserID(userID int64) error {
 	query := "DELETE FROM webauthn_credentials WHERE user_id = $1"
-	_, err := s.db.Exec(query, userID)
+	_, err := p.db.Exec(query, userID)
 	return err
 }

@@ -12,9 +12,8 @@ import (
 	"os"
 
 	"miniflux.app/v2/internal/config"
-	"miniflux.app/v2/internal/database"
 	"miniflux.app/v2/internal/proxyrotator"
-	"miniflux.app/v2/internal/storage"
+	"miniflux.app/v2/internal/storage/postgres"
 	"miniflux.app/v2/internal/ui/static"
 	"miniflux.app/v2/internal/version"
 )
@@ -168,7 +167,7 @@ func Parse() {
 		printErrorAndExit(fmt.Errorf("unable to generate javascript bundle: %v", err))
 	}
 
-	db, err := database.NewConnectionPool(
+	db, err := postgres.NewConnectionPool(
 		config.Opts.DatabaseURL(),
 		config.Opts.DatabaseMinConns(),
 		config.Opts.DatabaseMaxConns(),
@@ -179,14 +178,14 @@ func Parse() {
 	}
 	defer db.Close()
 
-	store := storage.NewStorage(db)
+	store := postgres.New(db)
 
 	if err := store.Ping(); err != nil {
 		printErrorAndExit(err)
 	}
 
 	if flagMigrate {
-		if err := database.Migrate(db); err != nil {
+		if err := store.Migrate(); err != nil {
 			printErrorAndExit(err)
 		}
 		return
@@ -228,12 +227,12 @@ func Parse() {
 
 	// Run migrations and start the daemon.
 	if config.Opts.RunMigrations() {
-		if err := database.Migrate(db); err != nil {
+		if err := store.Migrate(); err != nil {
 			printErrorAndExit(err)
 		}
 	}
 
-	if err := database.IsSchemaUpToDate(db); err != nil {
+	if err := store.IsSchemaUpToDate(); err != nil {
 		printErrorAndExit(err)
 	}
 
@@ -259,7 +258,8 @@ func Parse() {
 		return
 	}
 
-	startDaemon(store)
+	cc := postgres.NewCertificateCache(db)
+	startDaemon(store, cc)
 }
 
 func printErrorAndExit(err error) {

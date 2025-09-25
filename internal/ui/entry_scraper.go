@@ -11,19 +11,19 @@ import (
 	"miniflux.app/v2/internal/locale"
 	"miniflux.app/v2/internal/mediaproxy"
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/querybuilder"
 	"miniflux.app/v2/internal/reader/processor"
-	"miniflux.app/v2/internal/storage"
 )
 
 func (h *handler) fetchContent(w http.ResponseWriter, r *http.Request) {
 	loggedUserID := request.UserID(r)
 	entryID := request.RouteInt64Param(r, "entryID")
 
-	entryBuilder := h.store.NewEntryQueryBuilder(loggedUserID)
+	entryBuilder := querybuilder.NewEntryQueryBuilder(loggedUserID)
 	entryBuilder.WithEntryID(entryID)
 	entryBuilder.WithoutStatus(model.EntryStatusRemoved)
 
-	entry, err := entryBuilder.GetEntry()
+	entry, err := h.store.GetEntry(entryBuilder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return
@@ -40,9 +40,9 @@ func (h *handler) fetchContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	feedBuilder := storage.NewFeedQueryBuilder(h.store, loggedUserID)
+	feedBuilder := querybuilder.NewFeedQueryBuilder(loggedUserID)
 	feedBuilder.WithFeedID(entry.FeedID)
-	feed, err := feedBuilder.GetFeed()
+	feed, err := h.store.GetFeed(feedBuilder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return

@@ -12,16 +12,16 @@ import (
 	"miniflux.app/v2/internal/validator"
 )
 
-func createAdminUserFromEnvironmentVariables(store *storage.Storage) {
+func createAdminUserFromEnvironmentVariables(store storage.Storage) {
 	createAdminUser(store, config.Opts.AdminUsername(), config.Opts.AdminPassword())
 }
 
-func createAdminUserFromInteractiveTerminal(store *storage.Storage) {
+func createAdminUserFromInteractiveTerminal(store storage.Storage) {
 	username, password := askCredentials()
 	createAdminUser(store, username, password)
 }
 
-func createAdminUser(store *storage.Storage, username, password string) {
+func createAdminUser(store storage.Storage, username, password string) {
 	userCreationRequest := &model.UserCreationRequest{
 		Username: username,
 		Password: password,

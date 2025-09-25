@@ -13,6 +13,7 @@ import (
 	"miniflux.app/v2/internal/http/request"
 	"miniflux.app/v2/internal/http/response/json"
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/querybuilder"
 	"miniflux.app/v2/internal/validator"
 )
 
@@ -137,7 +138,7 @@ func (h *handler) refreshCategory(w http.ResponseWriter, r *http.Request) {
 	userID := request.UserID(r)
 	categoryID := request.RouteInt64Param(r, "categoryID")
 
-	batchBuilder := h.store.NewBatchBuilder()
+	batchBuilder := querybuilder.NewBatchBuilder()
 	batchBuilder.WithErrorLimit(config.Opts.PollingParsingErrorLimit())
 	batchBuilder.WithoutDisabledFeeds()
 	batchBuilder.WithUserID(userID)
@@ -145,7 +146,7 @@ func (h *handler) refreshCategory(w http.ResponseWriter, r *http.Request) {
 	batchBuilder.WithNextCheckExpired()
 	batchBuilder.WithLimitPerHost(config.Opts.PollingLimitPerHost())
 
-	jobs, err := batchBuilder.FetchJobs()
+	jobs, err := h.store.FetchJobs(batchBuilder)
 	if err != nil {
 		json.ServerError(w, r, err)
 		return

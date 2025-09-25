@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright The Miniflux Authors. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package storage // import "miniflux.app/v2/internal/storage"
+package postgres // import "miniflux.app/v2/internal/storage/postgres"
 
 import (
 	"database/sql"
@@ -18,9 +18,9 @@ import (
 )
 
 // CountUsers returns the total number of users.
-func (s *Storage) CountUsers() int {
+func (p *Postgres) CountUsers() int {
 	var result int
-	err := s.db.QueryRow(`SELECT count(*) FROM users`).Scan(&result)
+	err := p.db.QueryRow(`SELECT count(*) FROM users`).Scan(&result)
 	if err != nil {
 		return 0
 	}
@@ -29,9 +29,9 @@ func (s *Storage) CountUsers() int {
 }
 
 // SetLastLogin updates the last login date of a user.
-func (s *Storage) SetLastLogin(userID int64) error {
+func (p *Postgres) SetLastLogin(userID int64) error {
 	query := `UPDATE users SET last_login_at=now() WHERE id=$1`
-	_, err := s.db.Exec(query, userID)
+	_, err := p.db.Exec(query, userID)
 	if err != nil {
 		return fmt.Errorf(`store: unable to update last login date: %v`, err)
 	}
@@ -40,21 +40,21 @@ func (s *Storage) SetLastLogin(userID int64) error {
 }
 
 // UserExists checks if a user exists by using the given username.
-func (s *Storage) UserExists(username string) bool {
+func (p *Postgres) UserExists(username string) bool {
 	var result bool
-	s.db.QueryRow(`SELECT true FROM users WHERE username=LOWER($1) LIMIT 1`, username).Scan(&result)
+	p.db.QueryRow(`SELECT true FROM users WHERE username=LOWER($1) LIMIT 1`, username).Scan(&result)
 	return result
 }
 
 // AnotherUserExists checks if another user exists with the given username.
-func (s *Storage) AnotherUserExists(userID int64, username string) bool {
+func (p *Postgres) AnotherUserExists(userID int64, username string) bool {
 	var result bool
-	s.db.QueryRow(`SELECT true FROM users WHERE id != $1 AND username=LOWER($2) LIMIT 1`, userID, username).Scan(&result)
+	p.db.QueryRow(`SELECT true FROM users WHERE id != $1 AND username=LOWER($2) LIMIT 1`, userID, username).Scan(&result)
 	return result
 }
 
 // CreateUser creates a new user.
-func (s *Storage) CreateUser(userCreationRequest *model.UserCreationRequest) (*model.User, error) {
+func (p *Postgres) CreateUser(userCreationRequest *model.UserCreationRequest) (*model.User, error) {
 	var hashedPassword string
 	if userCreationRequest.Password != "" {
 		var err error
@@ -101,7 +101,7 @@ func (s *Storage) CreateUser(userCreationRequest *model.UserCreationRequest) (*m
 			open_external_links_in_new_tab
 	`
 
-	tx, err := s.db.Begin()
+	tx, err := p.db.Begin()
 	if err != nil {
 		return nil, fmt.Errorf(`store: unable to start transaction: %v`, err)
 	}
@@ -170,7 +170,7 @@ func (s *Storage) CreateUser(userCreationRequest *model.UserCreationRequest) (*m
 }
 
 // UpdateUser updates a user.
-func (s *Storage) UpdateUser(user *model.User) error {
+func (p *Postgres) UpdateUser(user *model.User) error {
 	user.ExternalFontHosts = strings.TrimSpace(user.ExternalFontHosts)
 
 	if user.Password != "" {
@@ -215,7 +215,7 @@ func (s *Storage) UpdateUser(user *model.User) error {
 				id=$31
 		`
 
-		_, err = s.db.Exec(
+		_, err = p.db.Exec(
 			query,
 			user.Username,
 			hashedPassword,
@@ -288,7 +288,7 @@ func (s *Storage) UpdateUser(user *model.User) error {
 				id=$30
 		`
 
-		_, err := s.db.Exec(
+		_, err := p.db.Exec(
 			query,
 			user.Username,
 			user.IsAdmin,
@@ -331,8 +331,8 @@ func (s *Storage) UpdateUser(user *model.User) error {
 }
 
 // UserLanguage returns the language of the given user.
-func (s *Storage) UserLanguage(userID int64) (language string) {
-	err := s.db.QueryRow(`SELECT language FROM users WHERE id = $1`, userID).Scan(&language)
+func (p *Postgres) UserLanguage(userID int64) (language string) {
+	err := p.db.QueryRow(`SELECT language FROM users WHERE id = $1`, userID).Scan(&language)
 	if err != nil {
 		return "en_US"
 	}
@@ -341,7 +341,7 @@ func (s *Storage) UserLanguage(userID int64) (language string) {
 }
 
 // UserByID finds a user by the ID.
-func (s *Storage) UserByID(userID int64) (*model.User, error) {
+func (p *Postgres) UserByID(userID int64) (*model.User, error) {
 	query := `
 		SELECT
 			id,
@@ -380,11 +380,11 @@ func (s *Storage) UserByID(userID int64) (*model.User, error) {
 		WHERE
 			id = $1
 	`
-	return s.fetchUser(query, userID)
+	return p.fetchUser(query, userID)
 }
 
 // UserByUsername finds a user by the username.
-func (s *Storage) UserByUsername(username string) (*model.User, error) {
+func (p *Postgres) UserByUsername(username string) (*model.User, error) {
 	query := `
 		SELECT
 			id,
@@ -423,11 +423,11 @@ func (s *Storage) UserByUsername(username string) (*model.User, error) {
 		WHERE
 			username=LOWER($1)
 	`
-	return s.fetchUser(query, username)
+	return p.fetchUser(query, username)
 }
 
 // UserByField finds a user by a field value.
-func (s *Storage) UserByField(field, value string) (*model.User, error) {
+func (p *Postgres) UserByField(field, value string) (*model.User, error) {
 	query := `
 		SELECT
 			id,
@@ -466,18 +466,18 @@ func (s *Storage) UserByField(field, value string) (*model.User, error) {
 		WHERE
 			%s=$1
 	`
-	return s.fetchUser(fmt.Sprintf(query, pq.QuoteIdentifier(field)), value)
+	return p.fetchUser(fmt.Sprintf(query, pq.QuoteIdentifier(field)), value)
 }
 
 // AnotherUserWithFieldExists returns true if a user has the value set for the given field.
-func (s *Storage) AnotherUserWithFieldExists(userID int64, field, value string) bool {
+func (p *Postgres) AnotherUserWithFieldExists(userID int64, field, value string) bool {
 	var result bool
-	s.db.QueryRow(fmt.Sprintf(`SELECT true FROM users WHERE id <> $1 AND %s=$2 LIMIT 1`, pq.QuoteIdentifier(field)), userID, value).Scan(&result)
+	p.db.QueryRow(fmt.Sprintf(`SELECT true FROM users WHERE id <> $1 AND %s=$2 LIMIT 1`, pq.QuoteIdentifier(field)), userID, value).Scan(&result)
 	return result
 }
 
 // UserByAPIKey returns a User from an API Key.
-func (s *Storage) UserByAPIKey(token string) (*model.User, error) {
+func (p *Postgres) UserByAPIKey(token string) (*model.User, error) {
 	query := `
 		SELECT
 			u.id,
@@ -518,12 +518,12 @@ func (s *Storage) UserByAPIKey(token string) (*model.User, error) {
 		WHERE
 			api_keys.token = $1
 	`
-	return s.fetchUser(query, token)
+	return p.fetchUser(query, token)
 }
 
-func (s *Storage) fetchUser(query string, args ...any) (*model.User, error) {
+func (p *Postgres) fetchUser(query string, args ...any) (*model.User, error) {
 	var user model.User
-	err := s.db.QueryRow(query, args...).Scan(
+	err := p.db.QueryRow(query, args...).Scan(
 		&user.ID,
 		&user.Username,
 		&user.IsAdmin,
@@ -567,8 +567,8 @@ func (s *Storage) fetchUser(query string, args ...any) (*model.User, error) {
 }
 
 // RemoveUser deletes a user.
-func (s *Storage) RemoveUser(userID int64) error {
-	tx, err := s.db.Begin()
+func (p *Postgres) RemoveUser(userID int64) error {
+	tx, err := p.db.Begin()
 	if err != nil {
 		return fmt.Errorf(`store: unable to start transaction: %v`, err)
 	}
@@ -591,9 +591,9 @@ func (s *Storage) RemoveUser(userID int64) error {
 }
 
 // RemoveUserAsync deletes user data without locking the database.
-func (s *Storage) RemoveUserAsync(userID int64) {
+func (p *Postgres) RemoveUserAsync(userID int64) {
 	go func() {
-		if err := s.deleteUserFeeds(userID); err != nil {
+		if err := p.deleteUserFeeds(userID); err != nil {
 			slog.Error("Unable to delete user feeds",
 				slog.Int64("user_id", userID),
 				slog.Any("error", err),
@@ -601,8 +601,8 @@ func (s *Storage) RemoveUserAsync(userID int64) {
 			return
 		}
 
-		s.db.Exec(`DELETE FROM users WHERE id=$1`, userID)
-		s.db.Exec(`DELETE FROM integrations WHERE user_id=$1`, userID)
+		p.db.Exec(`DELETE FROM users WHERE id=$1`, userID)
+		p.db.Exec(`DELETE FROM integrations WHERE user_id=$1`, userID)
 
 		slog.Debug("User deleted",
 			slog.Int64("user_id", userID),
@@ -611,8 +611,8 @@ func (s *Storage) RemoveUserAsync(userID int64) {
 	}()
 }
 
-func (s *Storage) deleteUserFeeds(userID int64) error {
-	rows, err := s.db.Query(`SELECT id FROM feeds WHERE user_id=$1`, userID)
+func (p *Postgres) deleteUserFeeds(userID int64) error {
+	rows, err := p.db.Query(`SELECT id FROM feeds WHERE user_id=$1`, userID)
 	if err != nil {
 		return fmt.Errorf(`store: unable to get user feeds: %v`, err)
 	}
@@ -628,7 +628,7 @@ func (s *Storage) deleteUserFeeds(userID int64) error {
 			slog.Int("goroutines", runtime.NumGoroutine()),
 		)
 
-		if err := s.RemoveFeed(userID, feedID); err != nil {
+		if err := p.RemoveFeed(userID, feedID); err != nil {
 			return err
 		}
 	}
@@ -637,7 +637,7 @@ func (s *Storage) deleteUserFeeds(userID int64) error {
 }
 
 // Users returns all users.
-func (s *Storage) Users() (model.Users, error) {
+func (p *Postgres) Users() (model.Users, error) {
 	query := `
 		SELECT
 			id,
@@ -675,7 +675,7 @@ func (s *Storage) Users() (model.Users, error) {
 			users
 		ORDER BY username ASC
 	`
-	rows, err := s.db.Query(query)
+	rows, err := p.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf(`store: unable to fetch users: %v`, err)
 	}
@@ -729,11 +729,11 @@ func (s *Storage) Users() (model.Users, error) {
 }
 
 // CheckPassword validate the hashed password.
-func (s *Storage) CheckPassword(username, password string) error {
+func (p *Postgres) CheckPassword(username, password string) error {
 	var hash string
 	username = strings.ToLower(username)
 
-	err := s.db.QueryRow("SELECT password FROM users WHERE username=$1", username).Scan(&hash)
+	err := p.db.QueryRow("SELECT password FROM users WHERE username=$1", username).Scan(&hash)
 	if err == sql.ErrNoRows {
 		return fmt.Errorf(`store: unable to find this user: %s`, username)
 	} else if err != nil {
@@ -748,11 +748,11 @@ func (s *Storage) CheckPassword(username, password string) error {
 }
 
 // HasPassword returns true if the given user has a password defined.
-func (s *Storage) HasPassword(userID int64) (bool, error) {
+func (p *Postgres) HasPassword(userID int64) (bool, error) {
 	var result bool
 	query := `SELECT true FROM users WHERE id=$1 AND password <> '' LIMIT 1`
 
-	err := s.db.QueryRow(query, userID).Scan(&result)
+	err := p.db.QueryRow(query, userID).Scan(&result)
 	if err == sql.ErrNoRows {
 		return false, nil
 	} else if err != nil {

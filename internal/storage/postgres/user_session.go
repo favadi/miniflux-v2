@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright The Miniflux Authors. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package storage // import "miniflux.app/v2/internal/storage"
+package postgres // import "miniflux.app/v2/internal/storage/postgres"
 
 import (
 	"crypto/rand"
@@ -14,7 +14,7 @@ import (
 )
 
 // UserSessions returns the list of sessions for the given user.
-func (s *Storage) UserSessions(userID int64) ([]model.UserSession, error) {
+func (p *Postgres) UserSessions(userID int64) ([]model.UserSession, error) {
 	query := `
 		SELECT
 			id,
@@ -28,7 +28,7 @@ func (s *Storage) UserSessions(userID int64) ([]model.UserSession, error) {
 		WHERE
 			user_id=$1 ORDER BY id DESC
 	`
-	rows, err := s.db.Query(query, userID)
+	rows, err := p.db.Query(query, userID)
 	if err != nil {
 		return nil, fmt.Errorf(`store: unable to fetch user sessions: %v`, err)
 	}
@@ -56,10 +56,10 @@ func (s *Storage) UserSessions(userID int64) ([]model.UserSession, error) {
 }
 
 // CreateUserSessionFromUsername creates a new user session.
-func (s *Storage) CreateUserSessionFromUsername(username, userAgent, ip string) (sessionID string, userID int64, err error) {
+func (p *Postgres) CreateUserSessionFromUsername(username, userAgent, ip string) (sessionID string, userID int64, err error) {
 	token := rand.Text()
 
-	tx, err := s.db.Begin()
+	tx, err := p.db.Begin()
 	if err != nil {
 		return "", 0, fmt.Errorf(`store: unable to start transaction: %v`, err)
 	}
@@ -90,7 +90,7 @@ func (s *Storage) CreateUserSessionFromUsername(username, userAgent, ip string) 
 }
 
 // UserSessionByToken finds a session by the token.
-func (s *Storage) UserSessionByToken(token string) (*model.UserSession, error) {
+func (p *Postgres) UserSessionByToken(token string) (*model.UserSession, error) {
 	var session model.UserSession
 
 	query := `
@@ -106,7 +106,7 @@ func (s *Storage) UserSessionByToken(token string) (*model.UserSession, error) {
 		WHERE
 			token = $1
 	`
-	err := s.db.QueryRow(query, token).Scan(
+	err := p.db.QueryRow(query, token).Scan(
 		&session.ID,
 		&session.UserID,
 		&session.Token,
@@ -126,9 +126,9 @@ func (s *Storage) UserSessionByToken(token string) (*model.UserSession, error) {
 }
 
 // RemoveUserSessionByToken remove a session by using the token.
-func (s *Storage) RemoveUserSessionByToken(userID int64, token string) error {
+func (p *Postgres) RemoveUserSessionByToken(userID int64, token string) error {
 	query := `DELETE FROM user_sessions WHERE user_id=$1 AND token=$2`
-	result, err := s.db.Exec(query, userID, token)
+	result, err := p.db.Exec(query, userID, token)
 	if err != nil {
 		return fmt.Errorf(`store: unable to remove this user session: %v`, err)
 	}
@@ -146,9 +146,9 @@ func (s *Storage) RemoveUserSessionByToken(userID int64, token string) error {
 }
 
 // RemoveUserSessionByID remove a session by using the ID.
-func (s *Storage) RemoveUserSessionByID(userID, sessionID int64) error {
+func (p *Postgres) RemoveUserSessionByID(userID, sessionID int64) error {
 	query := `DELETE FROM user_sessions WHERE user_id=$1 AND id=$2`
-	result, err := s.db.Exec(query, userID, sessionID)
+	result, err := p.db.Exec(query, userID, sessionID)
 	if err != nil {
 		return fmt.Errorf(`store: unable to remove this user session: %v`, err)
 	}
@@ -166,7 +166,7 @@ func (s *Storage) RemoveUserSessionByID(userID, sessionID int64) error {
 }
 
 // CleanOldUserSessions removes user sessions older than specified interval (24h minimum).
-func (s *Storage) CleanOldUserSessions(interval time.Duration) int64 {
+func (p *Postgres) CleanOldUserSessions(interval time.Duration) int64 {
 	query := `
 		DELETE FROM
 			user_sessions
@@ -176,7 +176,7 @@ func (s *Storage) CleanOldUserSessions(interval time.Duration) int64 {
 
 	days := max(int(interval/(24*time.Hour)), 1)
 
-	result, err := s.db.Exec(query, fmt.Sprintf("%d days", days))
+	result, err := p.db.Exec(query, fmt.Sprintf("%d days", days))
 	if err != nil {
 		return 0
 	}

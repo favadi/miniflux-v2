@@ -15,7 +15,7 @@ import (
 )
 
 // Serve declares all routes for the user interface.
-func Serve(router *mux.Router, store *storage.Storage, pool *worker.Pool) {
+func Serve(router *mux.Router, store storage.Storage, pool *worker.Pool) {
 	middleware := newMiddleware(router, store)
 
 	templateEngine := template.NewEngine(router)

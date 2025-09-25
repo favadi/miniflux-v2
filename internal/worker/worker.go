@@ -17,7 +17,7 @@ import (
 // worker refreshes a feed in the background.
 type worker struct {
 	id    int
-	store *storage.Storage
+	store storage.Storage
 }
 
 // Run wait for a job and refresh the given feed.

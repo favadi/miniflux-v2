@@ -16,13 +16,13 @@ import (
 )
 
 type handler struct {
-	store  *storage.Storage
+	store  storage.Storage
 	pool   *worker.Pool
 	router *mux.Router
 }
 
 // Serve declares API routes for the application.
-func Serve(router *mux.Router, store *storage.Storage, pool *worker.Pool) {
+func Serve(router *mux.Router, store storage.Storage, pool *worker.Pool) {
 	handler := &handler{store, pool, router}
 
 	sr := router.PathPrefix("/v1").Subrouter()

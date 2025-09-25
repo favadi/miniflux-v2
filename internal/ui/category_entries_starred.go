@@ -10,6 +10,7 @@ import (
 	"miniflux.app/v2/internal/http/response/html"
 	"miniflux.app/v2/internal/http/route"
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/querybuilder"
 	"miniflux.app/v2/internal/ui/session"
 	"miniflux.app/v2/internal/ui/view"
 )
@@ -34,7 +35,7 @@ func (h *handler) showCategoryEntriesStarredPage(w http.ResponseWriter, r *http.
 	}
 
 	offset := request.QueryIntParam(r, "offset", 0)
-	builder := h.store.NewEntryQueryBuilder(user.ID)
+	builder := querybuilder.NewEntryQueryBuilder(user.ID)
 	builder.WithCategoryID(category.ID)
 	builder.WithSorting(user.EntryOrder, user.EntryDirection)
 	builder.WithSorting("id", user.EntryDirection)
@@ -43,13 +44,13 @@ func (h *handler) showCategoryEntriesStarredPage(w http.ResponseWriter, r *http.
 	builder.WithOffset(offset)
 	builder.WithLimit(user.EntriesPerPage)
 
-	entries, err := builder.GetEntries()
+	entries, err := h.store.GetEntries(builder)
 	if err != nil {
 		html.ServerError(w, r, err)
 		return
 	}
 
-	count, err := builder.CountEntries()
+	count, err := h.store.CountEntries(builder)
 	if err != nil {
 		html.ServerError(w, r, err)
 		return

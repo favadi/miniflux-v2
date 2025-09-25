@@ -13,7 +13,7 @@ import (
 
 // Handler handles the logic for OPML import/export.
 type Handler struct {
-	store *storage.Storage
+	store storage.Storage
 }
 
 // Export exports user feeds to OPML.
@@ -87,6 +87,6 @@ func (h *Handler) Import(userID int64, data io.Reader) error {
 }
 
 // NewHandler creates a new handler for OPML files.
-func NewHandler(store *storage.Storage) *Handler {
+func NewHandler(store storage.Storage) *Handler {
 	return &Handler{store: store}
 }

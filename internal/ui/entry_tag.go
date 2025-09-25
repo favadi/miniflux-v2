@@ -11,7 +11,7 @@ import (
 	"miniflux.app/v2/internal/http/response/html"
 	"miniflux.app/v2/internal/http/route"
 	"miniflux.app/v2/internal/model"
-	"miniflux.app/v2/internal/storage"
+	"miniflux.app/v2/internal/querybuilder"
 	"miniflux.app/v2/internal/ui/session"
 	"miniflux.app/v2/internal/ui/view"
 )
@@ -30,12 +30,12 @@ func (h *handler) showTagEntryPage(w http.ResponseWriter, r *http.Request) {
 	}
 	entryID := request.RouteInt64Param(r, "entryID")
 
-	builder := h.store.NewEntryQueryBuilder(user.ID)
+	builder := querybuilder.NewEntryQueryBuilder(user.ID)
 	builder.WithTags([]string{tagName})
 	builder.WithEntryID(entryID)
 	builder.WithoutStatus(model.EntryStatusRemoved)
 
-	entry, err := builder.GetEntry()
+	entry, err := h.store.GetEntry(builder)
 	if err != nil {
 		html.ServerError(w, r, err)
 		return
@@ -56,9 +56,9 @@ func (h *handler) showTagEntryPage(w http.ResponseWriter, r *http.Request) {
 		entry.Status = model.EntryStatusRead
 	}
 
-	entryPaginationBuilder := storage.NewEntryPaginationBuilder(h.store, user.ID, entry.ID, user.EntryOrder, user.EntryDirection)
+	entryPaginationBuilder := querybuilder.NewEntryPaginationBuilder(user.ID, entry.ID, user.EntryOrder, user.EntryDirection)
 	entryPaginationBuilder.WithTags([]string{tagName})
-	prevEntry, nextEntry, err := entryPaginationBuilder.Entries()
+	prevEntry, nextEntry, err := h.store.Entries(entryPaginationBuilder)
 	if err != nil {
 		html.ServerError(w, r, err)
 		return

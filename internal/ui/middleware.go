@@ -25,10 +25,10 @@ import (
 
 type middleware struct {
 	router *mux.Router
-	store  *storage.Storage
+	store  storage.Storage
 }
 
-func newMiddleware(router *mux.Router, store *storage.Storage) *middleware {
+func newMiddleware(router *mux.Router, store storage.Storage) *middleware {
 	return &middleware{router, store}
 }
 
